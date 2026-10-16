@@ -36,11 +36,34 @@ class BioCard extends StatelessWidget {
 
   /// "পরিচিতি" / "Profile" when not given.
   final String? title;
+
+  /// False leaves the title out, for a card under a section heading.
+  final bool showTitle;
+
+  /// Whether the text is a translation from Bangla; by default every English
+  /// text is taken to be one.
+  final bool? translated;
+
+  /// The Bangla original on the website, linked as "Read the original" under
+  /// a translation.
+  final String? originalUrl;
+
+  /// The sources' names as the site gives them, by address.
+  final Map<String, String> sourceNames;
+
+  /// Adds "ভুল দেখলে জানান।" after the sources, as the member page does.
+  final bool askForCorrections;
+
   const BioCard({
     super.key,
     required this.text,
     this.sources = const [],
     this.title,
+    this.showTitle = true,
+    this.translated,
+    this.originalUrl,
+    this.sourceNames = const {},
+    this.askForCorrections = false,
   });
 
   @override
@@ -61,11 +84,13 @@ class BioCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title ?? t('পরিচিতি', 'Profile'),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 10),
+          if (showTitle) ...[
+            Text(
+              title ?? t('পরিচিতি', 'Profile'),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+          ],
           for (var i = 0; i < paragraphs.length; i++) ...[
             if (i > 0) const SizedBox(height: 12),
             Text(
@@ -75,14 +100,9 @@ class BioCard extends StatelessWidget {
               ).textTheme.bodyLarge?.copyWith(height: 1.75),
             ),
           ],
-          if (t.en) ...[
+          if (t.en && (translated ?? true)) ...[
             const SizedBox(height: 10),
-            Text(
-              'Translated from Bangla.',
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(fontStyle: FontStyle.italic),
-            ),
+            TranslatedNote(originalUrl: originalUrl),
           ],
           if (sources.isNotEmpty) ...[
             const SizedBox(height: 14),
@@ -94,20 +114,30 @@ class BioCard extends StatelessWidget {
               runSpacing: 4,
               children: [
                 Text(
-                  t('সূত্র:', 'Sources:'),
+                  askForCorrections
+                      ? t(
+                          'সূত্র:',
+                          sources.length == 1 ? 'Source:' : 'Sources:',
+                        )
+                      : t('সূত্র:', 'Sources:'),
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
                 for (final url in sources)
                   InkWell(
                     onTap: () => openLink(context, url),
                     child: Text(
-                      sourceLabel(url),
+                      sourceNames[url] ?? sourceLabel(url),
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: AppColors.brand,
                         decoration: TextDecoration.underline,
                         decorationColor: AppColors.brand,
                       ),
                     ),
+                  ),
+                if (askForCorrections)
+                  Text(
+                    t('ভুল দেখলে জানান।', 'If you see a mistake, let us know.'),
+                    style: Theme.of(context).textTheme.labelSmall,
                   ),
               ],
             ),
@@ -122,7 +152,25 @@ class BioCard extends StatelessWidget {
 class FactsCard extends StatelessWidget {
   final String title;
   final List<({String label, String value})> facts;
-  const FactsCard({super.key, required this.title, required this.facts});
+
+  /// The facts (by label) marked with a star: taken from Wikipedia.
+  final Set<String> starred;
+
+  /// The facts (by label) written one part to a line at each ";"; every fact
+  /// when not given.
+  final Set<String>? lines;
+
+  /// Under the rows: the note on the starred facts.
+  final Widget? footer;
+
+  const FactsCard({
+    super.key,
+    required this.title,
+    required this.facts,
+    this.starred = const {},
+    this.lines,
+    this.footer,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -153,16 +201,65 @@ class FactsCard extends StatelessWidget {
                 ),
                 Expanded(
                   // Education is written as "school; college; university": one to a line.
-                  child: Text(
-                    facts[i].value.split(RegExp(r';\s*')).join('\n'),
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: lines == null || lines!.contains(facts[i].label)
+                              ? facts[i].value.split(RegExp(r';\s*')).join('\n')
+                              : facts[i].value,
+                        ),
+                        if (starred.contains(facts[i].label))
+                          const TextSpan(
+                            text: ' *',
+                            style: TextStyle(
+                              color: AppColors.brand,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                      ],
+                    ),
                     style: Theme.of(context).textTheme.bodyLarge,
                   ),
                 ),
               ],
             ),
           ],
+          if (footer != null) ...[const Divider(height: 18), footer!],
         ],
       ),
+    );
+  }
+}
+
+/// "Translated from Bangla. Read the original": under English text that is
+/// the site's translation, as the website writes it. Nothing in Bangla.
+class TranslatedNote extends StatelessWidget {
+  /// The Bangla page on the website; without it only the first sentence.
+  final String? originalUrl;
+  const TranslatedNote({super.key, this.originalUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!t.en) return const SizedBox.shrink();
+    final style = Theme.of(context).textTheme.labelSmall;
+    final url = originalUrl;
+    return Wrap(
+      spacing: 4,
+      children: [
+        Text('Translated from Bangla.', style: style),
+        if (url != null)
+          InkWell(
+            onTap: () => openLink(context, url),
+            child: Text(
+              'Read the original',
+              style: style?.copyWith(
+                decoration: TextDecoration.underline,
+                decorationColor: AppColors.muted,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
