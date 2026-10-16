@@ -1,14 +1,13 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
-import '../api.dart';
 import '../bn.dart';
 import '../i18n.dart';
 import '../loading.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
-import 'member_screen.dart';
+import 'story_list.dart';
 
 /// A channel's hourly bulletin names the Prime Minister in passing; it is not a
 /// video about a member, so it goes after the ones that are.
@@ -38,9 +37,11 @@ List<Story> pickVideos(List<Story> videos, {int count = 8}) {
   return out;
 }
 
-/// The newest member videos as a row that scrolls sideways, above the news list.
-/// A card opens the video on the channel that published it; the app links to a
-/// broadcaster's video and never hosts or embeds it.
+/// The newest videos as a row that scrolls sideways, above the news list, as
+/// the website's news page has it: "ভিডিও", how many of the newest stories
+/// are videos, and the first six. A card opens the video on the channel that
+/// published it; the app links to a broadcaster's video and never hosts or
+/// embeds it.
 class VideoStrip extends StatelessWidget {
   final List<Story> videos;
   final VoidCallback onSeeAll;
@@ -48,12 +49,13 @@ class VideoStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final picked = pickVideos(videos);
-    if (picked.isEmpty) return const SizedBox.shrink();
+    final shown = videos.take(6).toList();
+    if (shown.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
               width: 4,
@@ -65,8 +67,24 @@ class VideoStrip extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                t('ভিডিওতে সংসদ সদস্যরা', 'MPs on video'),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: t('ভিডিও', 'Videos')),
+                    const TextSpan(text: '  '),
+                    TextSpan(
+                      text: t(
+                        '${bn(videos.length)}টি সর্বশেষ',
+                        'latest ${videos.length}',
+                      ),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
@@ -93,28 +111,10 @@ class VideoStrip extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             clipBehavior: Clip.none,
             padding: const EdgeInsets.only(bottom: 8),
-            itemCount: picked.length,
+            itemCount: shown.length,
             separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (context, i) => _VideoCard(story: picked[i]),
+            itemBuilder: (context, i) => _VideoCard(story: shown[i]),
           ),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Container(
-              width: 4,
-              height: 18,
-              decoration: BoxDecoration(
-                color: AppColors.brand,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              t('সর্বশেষ সংবাদ', 'Latest news'),
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-          ],
         ),
       ],
     );
@@ -125,20 +125,10 @@ class _VideoCard extends StatelessWidget {
   final Story story;
   const _VideoCard({required this.story});
 
-  void _openMember(BuildContext context, String slug) {
-    final brief = Api.instance.cached?.members
-        .where((m) => m.slug == slug)
-        .firstOrNull;
-    if (brief == null) return;
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => MemberScreen(member: brief)));
-  }
-
   @override
   Widget build(BuildContext context) {
     final length = durationBn(story.durationSeconds);
-    final person = story.members.isNotEmpty ? story.members.first : null;
+    final person = story.members.where((m) => m.name.isNotEmpty).firstOrNull;
     return Container(
       width: 262,
       decoration: AppDecor.card(),
@@ -155,21 +145,22 @@ class _VideoCard extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    ClipRect(
-                      child: Transform.scale(
-                        scale: story.thumbnail!.contains('ytimg.com')
-                            ? 1.22
-                            : 1.0,
-                        child: CachedNetworkImage(
-                          imageUrl: story.thumbnail!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, _) =>
-                              Container(color: AppColors.sunk),
-                          errorWidget: (_, _, _) =>
-                              Container(color: AppColors.brandDark),
+                    if (story.thumbnail case final thumb?)
+                      ClipRect(
+                        child: Transform.scale(
+                          scale: thumb.contains('ytimg.com') ? 1.22 : 1.0,
+                          child: CachedNetworkImage(
+                            imageUrl: thumb,
+                            fit: BoxFit.cover,
+                            placeholder: (_, _) =>
+                                Container(color: AppColors.sunk),
+                            errorWidget: (_, _, _) =>
+                                Container(color: AppColors.brandDark),
+                          ),
                         ),
-                      ),
-                    ),
+                      )
+                    else
+                      Container(color: AppColors.brandDark),
                     const DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -271,7 +262,8 @@ class _VideoCard extends StatelessWidget {
                         child: person != null
                             ? GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onTap: () => _openMember(context, person.slug),
+                                onTap: () =>
+                                    openMemberBySlug(context, person.slug),
                                 child: PartyChip(
                                   abbr: person.party,
                                   label: person.name,

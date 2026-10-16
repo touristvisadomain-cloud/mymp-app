@@ -1,12 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../api.dart';
 import '../bn.dart';
 import '../i18n.dart';
 import '../loading.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'member_screen.dart';
 
 /// A list of headlines and videos, used both on the news tab and inside a
 /// member's page. Every item opens the outlet's own page: the app links to the
@@ -95,9 +97,69 @@ List<String> storyWhen(Story story, {DateTime? now}) {
   return label.isEmpty ? const [] : [label];
 }
 
-/// One headline: the outlet and when, the headline, the members it names, and
-/// the outlet's picture on the right where it published one. A picture that
-/// will not load shows the outlet's initial instead of an empty grey box.
+/// Opens a member's page from a story, when the member is in the list the
+/// app holds (a story about someone no longer in the House opens nothing).
+void openMemberBySlug(BuildContext context, String slug) {
+  final brief = Api.instance.cached?.members
+      .where((m) => m.slug == slug)
+      .firstOrNull;
+  if (brief == null) return;
+  Navigator.of(
+    context,
+  ).push(MaterialPageRoute(builder: (_) => MemberScreen(member: brief)));
+}
+
+/// An outlet's name, or its web address when the site has no name for it in
+/// the reader's language (an English answer sends null rather than Bangla).
+String outletLabel(String source, String url) {
+  if (source.isNotEmpty) return source;
+  final host = Uri.tryParse(url)?.host ?? '';
+  return host.startsWith('www.') ? host.substring(4) : host;
+}
+
+/// "ভিডিও", "প্রজ্ঞাপন" or "সংবাদ" in a small outlined box, as the website
+/// marks a story's kind.
+class KindBadge extends StatelessWidget {
+  final String kind;
+  const KindBadge(this.kind, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final video = kind == 'video';
+    final String label;
+    if (video) {
+      label = t('ভিডিও', 'Video');
+    } else if (kind == 'press') {
+      label = t('প্রজ্ঞাপন', 'Notification');
+    } else {
+      label = t('সংবাদ', 'News');
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: video ? AppColors.brandRing : AppColors.rule),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'NotoSansBengali',
+          fontSize: 11.5,
+          fontWeight: FontWeight.w600,
+          color: video ? AppColors.brand : AppColors.inkSoft,
+          height: 1.35,
+        ),
+      ),
+    );
+  }
+}
+
+/// One headline, as the website's story card draws it: a "ভিডিও" or
+/// "প্রজ্ঞাপন" mark, the outlet and when, the headline, the other outlets that
+/// ran the same story (each opens there), and the members it is about (each
+/// opens their page); the outlet's picture on the right where it published
+/// one. A picture that will not load shows the outlet's initial instead of an
+/// empty grey box.
 class StoryCard extends StatelessWidget {
   final Story story;
   const StoryCard({super.key, required this.story});
@@ -113,6 +175,11 @@ class StoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final when = storyWhen(story);
     final length = durationBn(story.durationSeconds);
+    // On English a member with no English name comes without one; the
+    // Bangla is not shown in its place.
+    final people = story.members.where((m) => m.name.isNotEmpty).toList();
+    final source = story.lead.source;
+    final marked = story.isVideo || story.kind == 'press';
 
     return Container(
       decoration: AppDecor.card(),
@@ -123,108 +190,146 @@ class StoryCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppSizes.radiusCard),
           child: Padding(
             padding: const EdgeInsets.all(13),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // The outlet, then the date and time; with the time and
-                      // "আগে" the line no longer fits a narrow card, so it
-                      // wraps between its pieces.
-                      Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 4,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
+                          // The outlet, then the date and time; with the time
+                          // and "আগে" the line no longer fits a narrow card,
+                          // so it wraps between its pieces.
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 4,
+                            runSpacing: 2,
                             children: [
-                              if (story.isVideo) ...[
-                                const Icon(
-                                  Icons.play_circle_fill_rounded,
-                                  size: 15,
-                                  color: Color(0xFFE62117),
-                                ),
-                                const SizedBox(width: 5),
-                              ],
-                              Flexible(
-                                child: Text(
-                                  story.lead.source,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontFamily: 'NotoSansBengali',
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.brand,
-                                    height: 1.3,
-                                  ),
-                                ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (marked) ...[
+                                    KindBadge(story.kind),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  if (source.isNotEmpty)
+                                    Flexible(
+                                      child: Text(
+                                        source,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontFamily: 'NotoSansBengali',
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.brand,
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ),
+                                  if (when.isNotEmpty &&
+                                      (source.isNotEmpty || marked))
+                                    const Padding(
+                                      padding: EdgeInsets.only(
+                                        left: 6,
+                                        right: 2,
+                                      ),
+                                      child: Icon(
+                                        Icons.circle,
+                                        size: 3.5,
+                                        color: AppColors.muted,
+                                      ),
+                                    ),
+                                ],
                               ),
-                              if (when.isNotEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.only(left: 6, right: 2),
-                                  child: Icon(
-                                    Icons.circle,
-                                    size: 3.5,
-                                    color: AppColors.muted,
-                                  ),
-                                ),
+                              for (final piece in when)
+                                Text(piece, style: _whenStyle),
                             ],
                           ),
-                          for (final piece in when)
-                            Text(piece, style: _whenStyle),
+                          const SizedBox(height: 6),
+                          Text(
+                            story.lead.title,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'NotoSansBengali',
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                              height: 1.45,
+                            ),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        story.lead.title,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontFamily: 'NotoSansBengali',
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.ink,
-                          height: 1.45,
+                    ),
+                    if (story.thumbnail != null || story.isVideo) ...[
+                      const SizedBox(width: 12),
+                      _thumbnail(length),
+                    ],
+                  ],
+                ),
+                if (story.also.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  Text(
+                    t(
+                      'একই খবর আরও ${bn(story.also.length)}টি সংবাদমাধ্যমে',
+                      'The same story in ${story.also.length} more ${plural(story.also.length, 'outlet', 'outlets')}',
+                    ),
+                    style: const TextStyle(
+                      fontFamily: 'NotoSansBengali',
+                      fontSize: 12.5,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final a in story.also)
+                        _AlsoChip(
+                          label: outletLabel(a.source, a.url),
+                          onTap: () => openLink(context, a.url),
                         ),
-                      ),
-                      if (story.members.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 4,
-                          children: [
-                            for (final m in story.members.take(2))
-                              PartyChip(
-                                abbr: m.party,
-                                label: m.name,
-                                compact: true,
-                              ),
-                          ],
+                    ],
+                  ),
+                ],
+                if (people.isNotEmpty) ...[
+                  const SizedBox(height: 9),
+                  Wrap(
+                    spacing: 14,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      for (final m in people.take(3))
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => openMemberBySlug(context, m.slug),
+                          child: PartyChip(
+                            abbr: m.party,
+                            label: m.name,
+                            compact: true,
+                          ),
                         ),
-                      ],
-                      if (story.also.isNotEmpty) ...[
-                        const SizedBox(height: 6),
+                      if (people.length > 3)
                         Text(
                           t(
-                            'আরও ${bn(story.also.length)}টি সংবাদমাধ্যমে',
-                            'In ${story.also.length} more ${plural(story.also.length, 'outlet', 'outlets')}',
+                            'আরও ${bn(people.length - 3)} জন',
+                            '${people.length - 3} more',
                           ),
                           style: const TextStyle(
                             fontFamily: 'NotoSansBengali',
-                            fontSize: 12,
+                            fontSize: 12.5,
                             color: AppColors.muted,
                           ),
                         ),
-                      ],
                     ],
                   ),
-                ),
-                if (story.thumbnail != null || story.isVideo) ...[
-                  const SizedBox(width: 12),
-                  _thumbnail(length),
                 ],
               ],
             ),
@@ -313,6 +418,38 @@ class StoryCard extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Another outlet that ran the same story; opens it there.
+class _AlsoChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _AlsoChip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.paper,
+      shape: const StadiumBorder(side: BorderSide(color: AppColors.rule)),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'NotoSansBengali',
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              color: AppColors.inkSoft,
+              height: 1.3,
+            ),
+          ),
         ),
       ),
     );
