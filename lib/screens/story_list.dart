@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../bn.dart';
+import '../i18n.dart';
 import '../loading.dart';
 import '../models.dart';
 import '../theme.dart';
@@ -76,6 +77,24 @@ class StoryList extends StatelessWidget {
   }
 }
 
+/// When a story was published, as the website writes it: the date and the
+/// Dhaka clock time, and while it is under a week old how long ago,
+/// "১৭ অক্টোবর ২০২৬, রাত ১২:৫৯ · ১৬ মিনিট আগে". Only the date when the site
+/// sent no time; the site's own label when it sent no date at all. In pieces
+/// that a narrow card may wrap between but never inside.
+List<String> storyWhen(Story story, {DateTime? now}) {
+  final at = story.publishedAt;
+  final parts = t.whenParts(
+    at != null && at.isNotEmpty ? at : story.date,
+    now: now,
+  );
+  if (parts.isNotEmpty) return parts;
+  // The website's own label, minus the weekday it starts with.
+  final l = story.dateLabel;
+  final label = l.contains(',') ? l.split(',').last.trim() : l;
+  return label.isEmpty ? const [] : [label];
+}
+
 /// One headline: the outlet and when, the headline, the members it names, and
 /// the outlet's picture on the right where it published one. A picture that
 /// will not load shows the outlet's initial instead of an empty grey box.
@@ -83,9 +102,16 @@ class StoryCard extends StatelessWidget {
   final Story story;
   const StoryCard({super.key, required this.story});
 
+  static const _whenStyle = TextStyle(
+    fontFamily: 'NotoSansBengali',
+    fontSize: 12,
+    color: AppColors.muted,
+    height: 1.3,
+  );
+
   @override
   Widget build(BuildContext context) {
-    final when = shortDateBn(story.date, label: story.dateLabel);
+    final when = storyWhen(story);
     final length = durationBn(story.durationSeconds);
 
     return Container(
@@ -104,49 +130,51 @@ class StoryCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      // The outlet, then the date and time; with the time and
+                      // "আগে" the line no longer fits a narrow card, so it
+                      // wraps between its pieces.
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 4,
                         children: [
-                          if (story.isVideo) ...[
-                            const Icon(
-                              Icons.play_circle_fill_rounded,
-                              size: 15,
-                              color: Color(0xFFE62117),
-                            ),
-                            const SizedBox(width: 5),
-                          ],
-                          Flexible(
-                            child: Text(
-                              story.lead.source,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: 'NotoSansBengali',
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.brand,
-                                height: 1.3,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (story.isVideo) ...[
+                                const Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  size: 15,
+                                  color: Color(0xFFE62117),
+                                ),
+                                const SizedBox(width: 5),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  story.lead.source,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontFamily: 'NotoSansBengali',
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.brand,
+                                    height: 1.3,
+                                  ),
+                                ),
                               ),
-                            ),
+                              if (when.isNotEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 6, right: 2),
+                                  child: Icon(
+                                    Icons.circle,
+                                    size: 3.5,
+                                    color: AppColors.muted,
+                                  ),
+                                ),
+                            ],
                           ),
-                          if (when.isNotEmpty) ...[
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 6),
-                              child: Icon(
-                                Icons.circle,
-                                size: 3.5,
-                                color: AppColors.muted,
-                              ),
-                            ),
-                            Text(
-                              when,
-                              style: const TextStyle(
-                                fontFamily: 'NotoSansBengali',
-                                fontSize: 12,
-                                color: AppColors.muted,
-                                height: 1.3,
-                              ),
-                            ),
-                          ],
+                          for (final piece in when)
+                            Text(piece, style: _whenStyle),
                         ],
                       ),
                       const SizedBox(height: 6),
@@ -180,7 +208,10 @@ class StoryCard extends StatelessWidget {
                       if (story.also.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
-                          'আরও ${bn(story.also.length)}টি সংবাদমাধ্যমে',
+                          t(
+                            'আরও ${bn(story.also.length)}টি সংবাদমাধ্যমে',
+                            'In ${story.also.length} more ${plural(story.also.length, 'outlet', 'outlets')}',
+                          ),
                           style: const TextStyle(
                             fontFamily: 'NotoSansBengali',
                             fontSize: 12,
