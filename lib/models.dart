@@ -1,6 +1,12 @@
 /// The shapes /api/app/v1 answers with. Each one parses defensively: a field
 /// the site adds later must never crash a phone that has not been updated.
+///
+/// The field names say Bn because Bangla came first; with `lang=en` the site
+/// sends the same keys carrying English (null where it has no English), so in
+/// English `nameBn` holds the English name. News headlines stay Bangla.
 library;
+
+import 'i18n.dart';
 
 String? _s(dynamic v) => v is String && v.isNotEmpty ? v : null;
 int? _i(dynamic v) => v is num ? v.toInt() : null;
@@ -67,7 +73,7 @@ class MemberBrief {
   );
 
   /// "ঢাকা-১৭" for a territorial member, "সংরক্ষিত আসন" for a reserved one.
-  String get seatLabel => seatBn ?? 'সংরক্ষিত আসন';
+  String get seatLabel => seatBn ?? t('সংরক্ষিত আসন', 'Reserved seat');
 }
 
 class PartyBrief {
@@ -410,7 +416,9 @@ class AdviserDetail {
   factory AdviserDetail.fromJson(Map<String, dynamic> j) => AdviserDetail(
     slug: j['slug'] as String? ?? '',
     nameBn: j['nameBn'] as String? ?? '',
-    roleBn: j['roleBn'] as String? ?? 'প্রধানমন্ত্রীর উপদেষ্টা',
+    roleBn:
+        j['roleBn'] as String? ??
+        t('প্রধানমন্ত্রীর উপদেষ্টা', 'Adviser to the Prime Minister'),
     rankBn: _s(j['rankBn']),
     bioBn: j['bioBn'] as String? ?? '',
     professionBn: _s(j['professionBn']),
@@ -459,6 +467,10 @@ class StoryMember {
 class Story {
   final String id;
   final String date;
+
+  /// The moment it was published, with the clock time ("2026-10-16T18:59:00Z"),
+  /// when the site sends it; [date] is only the day.
+  final String? publishedAt;
   final String dateLabel;
   final StoryLink lead;
   final List<StoryLink> also;
@@ -470,6 +482,7 @@ class Story {
   const Story({
     required this.id,
     required this.date,
+    this.publishedAt,
     required this.dateLabel,
     required this.lead,
     this.also = const [],
@@ -494,6 +507,7 @@ class Story {
     return Story(
       id: j['id'] as String? ?? '',
       date: j['date'] as String? ?? '',
+      publishedAt: _s(j['publishedAt']),
       dateLabel: j['dateLabel'] as String? ?? '',
       lead: StoryLink.fromJson(
         (j['lead'] as Map<String, dynamic>?) ?? const {},

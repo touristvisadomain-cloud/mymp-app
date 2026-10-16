@@ -2,14 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'disclaimer.dart';
+import 'i18n.dart';
 import 'screens/cabinet_screen.dart';
 import 'screens/members_screen.dart';
 import 'screens/more_screen.dart';
 import 'screens/news_screen.dart';
 import 'theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The reader's language before the first frame, so an English reader never
+  // sees a flash of Bangla.
+  await appLang.load();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -18,7 +22,7 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
-  runApp(const MyMpApp());
+  runApp(const LangRoot(child: MyMpApp()));
 }
 
 class MyMpApp extends StatelessWidget {
@@ -27,7 +31,7 @@ class MyMpApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'আমার এমপি',
+      title: t('আমার এমপি', 'My MP'),
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       home: const Shell(),
@@ -114,26 +118,26 @@ class _ShellState extends State<Shell> {
         child: NavigationBar(
           selectedIndex: _index,
           onDestinationSelected: (i) => setState(() => _index = i),
-          destinations: const [
+          destinations: [
             NavigationDestination(
-              icon: Icon(Icons.groups_outlined),
-              selectedIcon: Icon(Icons.groups_rounded),
-              label: 'সংসদ সদস্য',
+              icon: const Icon(Icons.groups_outlined),
+              selectedIcon: const Icon(Icons.groups_rounded),
+              label: t('সংসদ সদস্য', 'MPs'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.article_outlined),
-              selectedIcon: Icon(Icons.article_rounded),
-              label: 'সংবাদ',
+              icon: const Icon(Icons.article_outlined),
+              selectedIcon: const Icon(Icons.article_rounded),
+              label: t('সংবাদ', 'News'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.account_balance_outlined),
-              selectedIcon: Icon(Icons.account_balance_rounded),
-              label: 'মন্ত্রিসভা',
+              icon: const Icon(Icons.account_balance_outlined),
+              selectedIcon: const Icon(Icons.account_balance_rounded),
+              label: t('মন্ত্রিসভা', 'Cabinet'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.more_horiz_rounded),
-              selectedIcon: Icon(Icons.more_horiz_rounded),
-              label: 'আরও',
+              icon: const Icon(Icons.more_horiz_rounded),
+              selectedIcon: const Icon(Icons.more_horiz_rounded),
+              label: t('আরও', 'More'),
             ),
           ],
         ),

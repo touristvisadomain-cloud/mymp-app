@@ -1,49 +1,22 @@
-/// Bengali numerals and dates. The app is read in Bangla, so ৩৪৮ is the number
-/// a reader expects to see, not 348.
-const _digits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+/// The number and date helpers the screens were written with. They now follow
+/// the reader's language (lib/i18n.dart): in Bangla they write exactly what
+/// they always wrote, ৩৪৮ and ১৩ সেপ্টেম্বর ২০২৬; in English, 348 and
+/// 13 September 2026. New code calls `t` directly.
+library;
 
-String bn(Object n) => n.toString().replaceAllMapped(
-  RegExp(r'\d'),
-  (m) => _digits[int.parse(m[0]!)],
-);
+import 'i18n.dart';
 
-/// "১২,৭৭,১১,৮৯৯": thousands, then lakh and crore groups, as Bangla readers count.
-String bnGroup(int n) {
-  final neg = n < 0;
-  var digits = n.abs().toString();
-  var out = '';
-  if (digits.length > 3) {
-    out = ',${digits.substring(digits.length - 3)}';
-    digits = digits.substring(0, digits.length - 3);
-    while (digits.length > 2) {
-      out = ',${digits.substring(digits.length - 2)}$out';
-      digits = digits.substring(0, digits.length - 2);
-    }
-    out = '$digits$out';
-  } else {
-    out = digits;
-  }
-  return bn('${neg ? '-' : ''}$out');
-}
+/// Digits in the reader's script: "৩৪৮" in Bangla, "348" in English.
+String bn(Object n) => t.n(n);
+
+/// "১২,৭৭,১১,৮৯৯": thousands, then lakh and crore groups, as Bangla readers
+/// count; "127,711,899" in English.
+String bnGroup(int n) => t.group(n);
 
 /// "৫০.৪%" for a share of a whole, one decimal.
-String pctBn(num part, num whole) =>
-    whole <= 0 ? '০%' : '${bn((part * 100 / whole).toStringAsFixed(1))}%';
+String pctBn(num part, num whole) => t.pct(part, whole);
 
-const monthsBn = [
-  'জানুয়ারি',
-  'ফেব্রুয়ারি',
-  'মার্চ',
-  'এপ্রিল',
-  'মে',
-  'জুন',
-  'জুলাই',
-  'আগস্ট',
-  'সেপ্টেম্বর',
-  'অক্টোবর',
-  'নভেম্বর',
-  'ডিসেম্বর',
-];
+const monthsBn = monthsBnList;
 
 const weekdaysBn = [
   'সোমবার',
@@ -56,12 +29,7 @@ const weekdaysBn = [
 ];
 
 /// "১৩ সেপ্টেম্বর ২০২৬" from an ISO date, or null when there is nothing to show.
-String? dateBn(String? iso) {
-  if (iso == null || iso.length < 10) return null;
-  final d = DateTime.tryParse(iso);
-  if (d == null) return null;
-  return '${bn(d.day)} ${monthsBn[d.month - 1]} ${bn(d.year)}';
-}
+String? dateBn(String? iso) => t.date(iso);
 
 /// "২ ঘণ্টা আগে" for something today, a date for anything older.
 String whenBn(String? iso) {
@@ -69,9 +37,17 @@ String whenBn(String? iso) {
   final then = DateTime.tryParse(iso);
   if (then == null) return '';
   final minutes = DateTime.now().difference(then.toLocal()).inMinutes;
-  if (minutes < 1) return 'এইমাত্র';
-  if (minutes < 60) return '${bn(minutes)} মিনিট আগে';
-  if (minutes < 24 * 60) return '${bn(minutes ~/ 60)} ঘণ্টা আগে';
+  if (minutes < 1) return t('এইমাত্র', 'just now');
+  if (minutes < 60) {
+    return t(
+      '${bn(minutes)} মিনিট আগে',
+      '$minutes ${plural(minutes, 'minute', 'minutes')} ago',
+    );
+  }
+  if (minutes < 24 * 60) {
+    final h = minutes ~/ 60;
+    return t('${bn(h)} ঘণ্টা আগে', '$h ${plural(h, 'hour', 'hours')} ago');
+  }
   return dateBn(iso) ?? '';
 }
 
@@ -98,9 +74,9 @@ String shortDateBn(String? iso, {String? label}) {
     now.month,
     now.day,
   ).difference(DateTime(d.year, d.month, d.day)).inDays;
-  if (days == 0) return 'আজ';
-  if (days == 1) return 'গতকাল';
-  final base = '${bn(d.day)} ${monthsBn[d.month - 1]}';
+  if (days == 0) return t('আজ', 'Today');
+  if (days == 1) return t('গতকাল', 'Yesterday');
+  final base = '${bn(d.day)} ${t.month(d.month)}';
   return d.year == now.year ? base : '$base ${bn(d.year)}';
 }
 
@@ -108,8 +84,8 @@ String shortDateBn(String? iso, {String? label}) {
 String initialOf(String name) {
   final trimmed = name.trim();
   if (trimmed.isEmpty) return '?';
-  // Bengali names often start with an honorific the reader does not think of
-  // as part of the name; the first real word is the one to take a letter from.
+  // Names often start with an honorific the reader does not think of as part
+  // of the name; the first real word is the one to take a letter from.
   const skip = {
     'মোঃ',
     'মো.',
@@ -121,8 +97,26 @@ String initialOf(String name) {
     'অ্যাডভোকেট',
     'এড.',
   };
+  // The same titles as an English name writes them: "Md. Abul Hasnat" is
+  // filed under A. Compared without case or a closing full stop.
+  const skipEn = {
+    'md',
+    'mohammad',
+    'mohammed',
+    'muhammad',
+    'mohd',
+    'dr',
+    'barrister',
+    'advocate',
+    'adv',
+    'engr',
+    'prof',
+  };
+  bool honorific(String word) =>
+      skip.contains(word) ||
+      skipEn.contains(word.toLowerCase().replaceAll(RegExp(r'\.$'), ''));
   for (final word in trimmed.split(RegExp(r'\s+'))) {
-    if (!skip.contains(word) && word.isNotEmpty) return word.characters0;
+    if (!honorific(word) && word.isNotEmpty) return word.characters0;
   }
   return trimmed.characters0;
 }
@@ -135,12 +129,15 @@ extension on String {
     while (end < length && RegExp(r'[া-্ৗ‌‍]').hasMatch(this[end])) {
       end++;
     }
-    return substring(0, end);
+    // A Latin letter is drawn as a capital, as an English reader files a name.
+    return substring(0, end).toUpperCase();
   }
 }
 
 /// A parliament by its Bangla ordinal, as the secretariat writes it: ত্রয়োদশ, not ১৩তম.
+/// In English, "13th".
 String parliamentBn(int n) {
+  if (t.en) return t.ord(n);
   const words = {
     1: 'প্রথম',
     2: 'দ্বিতীয়',
