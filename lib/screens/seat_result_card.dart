@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../bn.dart';
+import '../i18n.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -23,6 +23,7 @@ class SeatResultCard extends StatelessWidget {
     final total = all.fold<int>(0, (n, c) => n + c.votes);
     final shown = all.take(5).toList();
     final tied = shown.length > 1 && shown[0].votes == shown[1].votes;
+    final margin = shown.length > 1 ? shown[0].votes - shown[1].votes : 0;
 
     return Container(
       width: double.infinity,
@@ -35,7 +36,10 @@ class SeatResultCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$seatLabel আসনের ফল, ২০২৬', style: text.titleMedium),
+          Text(
+            t('$seatLabel আসনের ফল, ২০২৬', 'Result for $seatLabel, 2026'),
+            style: text.titleMedium,
+          ),
           const SizedBox(height: 12),
           for (final (i, c) in shown.indexed)
             Padding(
@@ -61,11 +65,11 @@ class SeatResultCard extends StatelessWidget {
                         ),
                       ),
                       if (i == 0 && !tied) ...[
-                        const Pill('বিজয়ী', filled: true),
+                        Pill(t('বিজয়ী', 'Winner'), filled: true),
                         const SizedBox(width: 8),
                       ],
                       Text(
-                        bnGroup(c.votes),
+                        t.group(c.votes),
                         style: const TextStyle(
                           fontFamily: 'NotoSansBengali',
                           fontSize: 13.5,
@@ -87,7 +91,7 @@ class SeatResultCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${c.partyBn ?? c.party ?? 'দল জানা নেই'}, ${pctBn(c.votes, total)}',
+                    '${c.partyBn ?? c.party ?? t('দল জানা নেই', 'Party not known')}, ${t.pct(c.votes, total)}',
                     style: text.labelSmall,
                   ),
                 ],
@@ -95,19 +99,30 @@ class SeatResultCard extends StatelessWidget {
             ),
           if (all.length > shown.length)
             Text(
-              'আরও ${bn(all.length - shown.length)} জন প্রার্থী ছিলেন।',
+              t(
+                'আরও ${t.n(all.length - shown.length)} জন প্রার্থী ছিলেন।',
+                all.length - shown.length == 1
+                    ? 'There was 1 more candidate.'
+                    : 'There were ${all.length - shown.length} more candidates.',
+              ),
               style: text.labelSmall,
             ),
           if (shown.length > 1 && !tied) ...[
             const SizedBox(height: 4),
             Text(
-              '${bnGroup(shown[0].votes - shown[1].votes)} ভোটের ব্যবধানে জয়।',
+              t(
+                '${t.group(margin)} ভোটের ব্যবধানে জয়।',
+                'Won by a margin of ${t.group(margin)} ${plural(margin, 'vote', 'votes')}.',
+              ),
               style: text.bodyMedium,
             ),
           ],
           const SizedBox(height: 8),
           Text(
-            'সূত্র: দ্য বিজনেস স্ট্যান্ডার্ড ও উইকিপিডিয়া; নির্বাচন কমিশনের গেজেটের সঙ্গে এখনো মিলিয়ে দেখা হয়নি।',
+            t(
+              'সূত্র: দ্য বিজনেস স্ট্যান্ডার্ড ও উইকিপিডিয়া; নির্বাচন কমিশনের গেজেটের সঙ্গে এখনো মিলিয়ে দেখা হয়নি।',
+              'Source: The Business Standard and Wikipedia; not yet checked against the Election Commission’s gazette.',
+            ),
             style: text.labelSmall?.copyWith(height: 1.5),
           ),
         ],

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../bn.dart';
+import '../i18n.dart';
 import '../loading.dart';
 import '../models.dart';
 import '../theme.dart';
@@ -65,7 +66,7 @@ class VideoStrip extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'ভিডিওতে সংসদ সদস্যরা',
+                t('ভিডিওতে সংসদ সদস্যরা', 'MPs on video'),
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
@@ -75,9 +76,9 @@ class VideoStrip extends StatelessWidget {
                 foregroundColor: AppColors.brand,
                 padding: const EdgeInsets.symmetric(horizontal: 6),
               ),
-              child: const Text(
-                'সব ভিডিও',
-                style: TextStyle(
+              child: Text(
+                t('সব ভিডিও', 'All videos'),
+                style: const TextStyle(
                   fontFamily: 'NotoSansBengali',
                   fontWeight: FontWeight.w700,
                 ),
@@ -110,7 +111,7 @@ class VideoStrip extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              'সর্বশেষ সংবাদ',
+              t('সর্বশেষ সংবাদ', 'Latest news'),
               style: Theme.of(context).textTheme.titleLarge,
             ),
           ],
@@ -195,18 +196,18 @@ class _VideoCard extends StatelessWidget {
                           color: const Color(0xFFE62117),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.play_arrow_rounded,
                               size: 14,
                               color: Colors.white,
                             ),
-                            SizedBox(width: 2),
+                            const SizedBox(width: 2),
                             Text(
-                              'ভিডিও',
-                              style: TextStyle(
+                              t('ভিডিও', 'Video'),
+                              style: const TextStyle(
                                 fontFamily: 'NotoSansBengali',
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,

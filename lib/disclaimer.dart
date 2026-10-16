@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'i18n.dart';
 import 'loading.dart';
 import 'theme.dart';
+import 'widgets.dart';
 
 /// Google Play asks an app that shows government information to say, in the
 /// app and in its listing, that it does not represent the government, and to
@@ -14,57 +16,102 @@ import 'theme.dart';
 /// ("Insufficient Sources Provided") because the wording then said results came
 /// "from published results" and named no one: a phrase that admits to more
 /// sources than it lists is what the Misleading Claims policy objects to.
+///
+/// The English is a faithful rendering of the Bangla, sentence for sentence:
+/// it must claim no more and no less than the Bangla does.
 
-const kNotOfficial =
-    'আমার এমপি একটি স্বাধীন, বেসরকারি তথ্যসেবা। এটি বাংলাদেশ জাতীয় সংসদ, নির্বাচন কমিশন, মন্ত্রিপরিষদ বিভাগ '
-    'বা সরকারের কোনো দপ্তরের অ্যাপ নয়, কোনো সরকারি প্রতিষ্ঠানের প্রতিনিধিত্ব করে না এবং কারও সঙ্গে যুক্তও নয়।';
+String get kNotOfficial => t(
+  'আমার এমপি একটি স্বাধীন, বেসরকারি তথ্যসেবা। এটি বাংলাদেশ জাতীয় সংসদ, নির্বাচন কমিশন, মন্ত্রিপরিষদ বিভাগ '
+      'বা সরকারের কোনো দপ্তরের অ্যাপ নয়, কোনো সরকারি প্রতিষ্ঠানের প্রতিনিধিত্ব করে না এবং কারও সঙ্গে যুক্তও নয়।',
+  'My MP is an independent, non-governmental information service. It is not an app of the Parliament of '
+      'Bangladesh, the Election Commission, the Cabinet Division or any government office; it does not represent '
+      'any government body and is not affiliated with any.',
+);
 
 typedef InfoSource = ({String label, String what, String url});
 
 /// The government sources, as the reader can check them.
-const kOfficialSources = <InfoSource>[
+List<InfoSource> get kOfficialSources => [
   (
-    label: 'বাংলাদেশ জাতীয় সংসদ: parliament.gov.bd',
-    what:
-        'সংসদ সদস্যদের নাম, ছবি, আসন, দল, যোগাযোগ, সংসদীয় কমিটি, অধিবেশন ও সংসদ সচিবালয়ের প্রজ্ঞাপন',
+    label: t(
+      'বাংলাদেশ জাতীয় সংসদ: parliament.gov.bd',
+      'Parliament of Bangladesh: parliament.gov.bd',
+    ),
+    what: t(
+      'সংসদ সদস্যদের নাম, ছবি, আসন, দল, যোগাযোগ, সংসদীয় কমিটি, অধিবেশন ও সংসদ সচিবালয়ের প্রজ্ঞাপন',
+      'Members of Parliament’s names, photos, seats, parties and contact details; parliamentary committees, '
+          'sessions and Parliament Secretariat notifications',
+    ),
     url: 'https://www.parliament.gov.bd',
   ),
   (
-    label: 'বাংলাদেশ নির্বাচন কমিশন: ecs.gov.bd',
-    what: 'নিবন্ধিত ভোটার ও ভোটকেন্দ্রের সংখ্যা',
+    label: t(
+      'বাংলাদেশ নির্বাচন কমিশন: ecs.gov.bd',
+      'Bangladesh Election Commission: ecs.gov.bd',
+    ),
+    what: t(
+      'নিবন্ধিত ভোটার ও ভোটকেন্দ্রের সংখ্যা',
+      'Numbers of registered voters and polling centres',
+    ),
     url: 'https://www.ecs.gov.bd',
   ),
   (
-    label: 'মন্ত্রিপরিষদ বিভাগ: cabinet.gov.bd',
-    what: 'মন্ত্রী, প্রতিমন্ত্রী ও উপদেষ্টাদের তালিকা, কে কোন মন্ত্রণালয়ে',
+    label: t(
+      'মন্ত্রিপরিষদ বিভাগ: cabinet.gov.bd',
+      'Cabinet Division: cabinet.gov.bd',
+    ),
+    what: t(
+      'মন্ত্রী, প্রতিমন্ত্রী ও উপদেষ্টাদের তালিকা, কে কোন মন্ত্রণালয়ে',
+      'The list of Ministers, State Ministers and Advisers, and who holds which ministry',
+    ),
     url: 'https://cabinet.gov.bd',
   ),
 ];
 
 /// The sources that are not government offices. Each is also named where its
 /// information appears: under a seat's result, under a biography.
-const kOtherSources = <InfoSource>[
+List<InfoSource> get kOtherSources => [
   (
-    label: 'দ্য বিজনেস স্ট্যান্ডার্ড: tbsnews.net',
-    what: '২০২৬ সালের নির্বাচনের আসনভিত্তিক ভোটের ফল',
+    label: t(
+      'দ্য বিজনেস স্ট্যান্ডার্ড: tbsnews.net',
+      'The Business Standard: tbsnews.net',
+    ),
+    what: t(
+      '২০২৬ সালের নির্বাচনের আসনভিত্তিক ভোটের ফল',
+      'Seat-by-seat results of the 2026 election',
+    ),
     url: 'https://www.tbsnews.net',
   ),
   (
-    label: 'বাংলা উইকিপিডিয়া: bn.wikipedia.org',
-    what:
-        'ভোটের ফল মিলিয়ে দেখা, দলের ইতিহাস, কিছু সদস্যের শিক্ষা, জন্মস্থান ও জীবনী',
+    label: t(
+      'বাংলা উইকিপিডিয়া: bn.wikipedia.org',
+      'Bangla Wikipedia: bn.wikipedia.org',
+    ),
+    what: t(
+      'ভোটের ফল মিলিয়ে দেখা, দলের ইতিহাস, কিছু সদস্যের শিক্ষা, জন্মস্থান ও জীবনী',
+      'Cross-checking the election results; party histories; some members’ education, birthplaces and biographies',
+    ),
     url: 'https://bn.wikipedia.org',
   ),
   (
-    label: 'ইংরেজি উইকিপিডিয়া: en.wikipedia.org',
-    what: 'কিছু সদস্যের শিক্ষা, জন্মস্থান ও জীবনী',
+    label: t(
+      'ইংরেজি উইকিপিডিয়া: en.wikipedia.org',
+      'English Wikipedia: en.wikipedia.org',
+    ),
+    what: t(
+      'কিছু সদস্যের শিক্ষা, জন্মস্থান ও জীবনী',
+      'Some members’ education, birthplaces and biographies',
+    ),
     url: 'https://en.wikipedia.org',
   ),
 ];
 
-const kNewsLine =
-    'সংবাদ অংশের প্রতিটি শিরোনামের পাশে সংবাদমাধ্যমের নাম লেখা থাকে; চাপ দিলে সেই সংবাদমাধ্যমের নিজের সাইটে খোলে। '
-    'অ্যাপ নিজে কোনো সংবাদ লেখে না।';
+String get kNewsLine => t(
+  'সংবাদ অংশের প্রতিটি শিরোনামের পাশে সংবাদমাধ্যমের নাম লেখা থাকে; চাপ দিলে সেই সংবাদমাধ্যমের নিজের সাইটে খোলে। '
+      'অ্যাপ নিজে কোনো সংবাদ লেখে না।',
+  'In the News section, every headline is shown with the name of its news outlet; tapping it opens the story '
+      'on that outlet’s own site. The app itself writes no news.',
+);
 
 TextStyle _bn(double size, FontWeight weight, Color color, {double? height}) =>
     TextStyle(
@@ -105,7 +152,12 @@ class _SourceRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     source.what,
-                    style: _bn(12, FontWeight.w400, AppColors.muted, height: 1.45),
+                    style: _bn(
+                      12,
+                      FontWeight.w400,
+                      AppColors.muted,
+                      height: 1.45,
+                    ),
                   ),
                 ],
               ),
@@ -141,10 +193,10 @@ class SourceList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _groupTitle('সরকারি সূত্র'),
+        _groupTitle(t('সরকারি সূত্র', 'Government sources')),
         for (final s in kOfficialSources)
           _SourceRow(s, icon: Icons.account_balance_outlined),
-        _groupTitle('অন্যান্য সূত্র'),
+        _groupTitle(t('অন্যান্য সূত্র', 'Other sources')),
         for (final s in kOtherSources)
           _SourceRow(s, icon: Icons.menu_book_outlined),
         Padding(
@@ -189,8 +241,17 @@ class DisclaimerCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'স্বাধীন, বেসরকারি তথ্যসেবা। সংসদ, নির্বাচন কমিশন বা সরকারের কোনো দপ্তরের অ্যাপ নয়, কোনো সরকারি প্রতিষ্ঠানের প্রতিনিধিত্ব করে না।',
-                    style: _bn(13.5, FontWeight.w600, AppColors.ink, height: 1.5),
+                    t(
+                      'স্বাধীন, বেসরকারি তথ্যসেবা। সংসদ, নির্বাচন কমিশন বা সরকারের কোনো দপ্তরের অ্যাপ নয়, কোনো সরকারি প্রতিষ্ঠানের প্রতিনিধিত্ব করে না।',
+                      'An independent, non-governmental information service. Not an app of Parliament, the Election '
+                          'Commission or any government office, and does not represent any government body.',
+                    ),
+                    style: _bn(
+                      13.5,
+                      FontWeight.w600,
+                      AppColors.ink,
+                      height: 1.5,
+                    ),
                   ),
                 ),
               ],
@@ -220,7 +281,7 @@ Future<void> showSourcesSheet(BuildContext context) {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
               child: Text(
-                'তথ্যের সূত্র',
+                t('তথ্যের সূত্র', 'Sources'),
                 style: _bn(18, FontWeight.w700, AppColors.ink),
               ),
             ),
@@ -251,9 +312,20 @@ Future<void> showDisclaimerOnce(BuildContext context) async {
     barrierDismissible: false,
     builder: (context) => AlertDialog(
       contentPadding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
-      title: Text(
-        'আমার এমপি সম্পর্কে',
-        style: _bn(19, FontWeight.w700, AppColors.ink),
+      // The reader's language can be chosen here, before anything else is
+      // read: the dialog redraws in place.
+      title: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              t('আমার এমপি সম্পর্কে', 'About My MP'),
+              style: _bn(19, FontWeight.w700, AppColors.ink),
+            ),
+          ),
+          const SizedBox(width: 8),
+          const LangSwitch(compact: true),
+        ],
       ),
       content: SizedBox(
         width: double.maxFinite,
@@ -279,7 +351,10 @@ Future<void> showDisclaimerOnce(BuildContext context) async {
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.brand),
           onPressed: () => Navigator.of(context).pop(),
-          child: Text('বুঝেছি', style: _bn(14.5, FontWeight.w700, Colors.white)),
+          child: Text(
+            t('বুঝেছি', 'I understand'),
+            style: _bn(14.5, FontWeight.w700, Colors.white),
+          ),
         ),
       ],
     ),

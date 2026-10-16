@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../brand_header.dart';
+import '../i18n.dart';
 import '../loading.dart';
-import '../bn.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -21,8 +21,12 @@ class CabinetScreen extends StatefulWidget {
   State<CabinetScreen> createState() => _CabinetScreenState();
 }
 
-class _CabinetScreenState extends State<CabinetScreen> {
+class _CabinetScreenState extends State<CabinetScreen>
+    with RefetchOnLang<CabinetScreen> {
   late Future<List<CabinetPost>> _future = Api.instance.cabinet();
+
+  @override
+  void onLangChanged() => _reload();
 
   void _reload() => setState(() {
     _future = Api.instance.cabinet();
@@ -38,9 +42,12 @@ class _CabinetScreenState extends State<CabinetScreen> {
     return Scaffold(
       body: Column(
         children: [
-          const BrandHeader(
-            title: 'মন্ত্রিসভা',
-            subtitle: 'প্রধানমন্ত্রী, মন্ত্রী, প্রতিমন্ত্রী ও উপদেষ্টা',
+          BrandHeader(
+            title: t('মন্ত্রিসভা', 'Cabinet'),
+            subtitle: t(
+              'প্রধানমন্ত্রী, মন্ত্রী, প্রতিমন্ত্রী ও উপদেষ্টা',
+              'Prime Minister, Ministers, State Ministers and Advisers',
+            ),
           ),
           Expanded(
             child: Loaded<List<CabinetPost>>(
@@ -48,25 +55,32 @@ class _CabinetScreenState extends State<CabinetScreen> {
               onRetry: _reload,
               builder: (context, posts) {
                 if (posts.isEmpty) {
-                  return const EmptyState(
+                  return EmptyState(
                     icon: Icons.account_balance_outlined,
-                    title: 'মন্ত্রিসভার তালিকা পাওয়া যায়নি',
-                    body: 'তালিকা প্রকাশিত হলে এখানে দেখা যাবে।',
+                    title: t(
+                      'মন্ত্রিসভার তালিকা পাওয়া যায়নি',
+                      'The Cabinet list was not found',
+                    ),
+                    body: t(
+                      'তালিকা প্রকাশিত হলে এখানে দেখা যাবে।',
+                      'It will appear here once the list is published.',
+                    ),
                   );
                 }
 
                 // Grouped by office in order of precedence. The list's own order is
                 // only the order within each source list, and put the advisers
-                // above the Prime Minister.
+                // above the Prime Minister. The titles arrive in the reader's
+                // language; both spellings of each rank are known.
                 const rank = [
-                  'প্রধানমন্ত্রী',
-                  'মন্ত্রী',
-                  'প্রতিমন্ত্রী',
-                  'উপমন্ত্রী',
-                  'উপদেষ্টা',
+                  ['প্রধানমন্ত্রী', 'Prime Minister'],
+                  ['মন্ত্রী', 'Minister'],
+                  ['প্রতিমন্ত্রী', 'State Minister', 'Minister of State'],
+                  ['উপমন্ত্রী', 'Deputy Minister'],
+                  ['উপদেষ্টা', 'Adviser', 'Advisor'],
                 ];
                 int rankOf(String title) {
-                  final i = rank.indexOf(title);
+                  final i = rank.indexWhere((r) => r.contains(title));
                   return i < 0 ? rank.length : i;
                 }
 
@@ -115,7 +129,10 @@ class _CabinetScreenState extends State<CabinetScreen> {
                     ),
                     children: [
                       Text(
-                        'মোট ${bn(peopleCount)} জন দায়িত্বে',
+                        t(
+                          'মোট ${t.n(peopleCount)} জন দায়িত্বে',
+                          '${plural(peopleCount, '1 person', '$peopleCount people')} in office',
+                        ),
                         style: const TextStyle(
                           fontFamily: 'NotoSansBengali',
                           fontSize: 13,
@@ -139,7 +156,7 @@ class _CabinetScreenState extends State<CabinetScreen> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                entry.key,
+                                _heading(entry.key),
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
                               const SizedBox(width: 8),
@@ -155,7 +172,7 @@ class _CabinetScreenState extends State<CabinetScreen> {
                                   ),
                                 ),
                                 child: Text(
-                                  bn(entry.value.length),
+                                  t.n(entry.value.length),
                                   style: const TextStyle(
                                     fontFamily: 'NotoSansBengali',
                                     fontSize: 12,
@@ -183,6 +200,21 @@ class _CabinetScreenState extends State<CabinetScreen> {
       ),
     );
   }
+}
+
+/// A group's heading is the office's title. Bangla needs no plural ("মন্ত্রী"
+/// heads the ministers); English does.
+String _heading(String title) {
+  if (!t.en) return title;
+  const plurals = {
+    'Minister': 'Ministers',
+    'State Minister': 'State Ministers',
+    'Minister of State': 'Ministers of State',
+    'Deputy Minister': 'Deputy Ministers',
+    'Adviser': 'Advisers',
+    'Advisor': 'Advisers',
+  };
+  return plurals[title] ?? title;
 }
 
 class _PostCard extends StatelessWidget {
@@ -251,7 +283,7 @@ class _PostCard extends StatelessWidget {
               const SizedBox(height: 4),
               if (ministries.isEmpty)
                 Text(
-                  m?.seatLabel ?? 'সংসদ সদস্য নন',
+                  m?.seatLabel ?? t('সংসদ সদস্য নন', 'Not an MP'),
                   style: Theme.of(context).textTheme.bodySmall,
                 )
               else
@@ -285,7 +317,7 @@ class _PostCard extends StatelessWidget {
                   ),
               if (m == null) ...[
                 const SizedBox(height: 6),
-                const Pill('সংসদ সদস্য নন', colour: AppColors.muted),
+                Pill(t('সংসদ সদস্য নন', 'Not an MP'), colour: AppColors.muted),
               ],
             ],
           ),

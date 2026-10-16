@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'i18n.dart';
 import 'loading.dart';
 import 'theme.dart';
 
@@ -11,28 +12,35 @@ String sourceLabel(String url) {
   final wiki = RegExp(r'^(\w+)\.wikipedia\.org$').firstMatch(host);
   if (wiki != null) {
     final lang = wiki.group(1);
-    return 'উইকিপিডিয়া (${lang == 'bn'
-        ? 'বাংলা'
+    final which = lang == 'bn'
+        ? t('বাংলা', 'Bangla')
         : lang == 'en'
-        ? 'ইংরেজি'
-        : lang})';
+        ? t('ইংরেজি', 'English')
+        : lang;
+    return '${t('উইকিপিডিয়া', 'Wikipedia')} ($which)';
   }
-  if (host.endsWith('parliament.gov.bd')) return 'জাতীয় সংসদ';
-  if (host.endsWith('cabinet.gov.bd')) return 'মন্ত্রিপরিষদ বিভাগ';
+  if (host.endsWith('parliament.gov.bd')) return t('জাতীয় সংসদ', 'Parliament');
+  if (host.endsWith('cabinet.gov.bd')) {
+    return t('মন্ত্রিপরিষদ বিভাগ', 'Cabinet Division');
+  }
   return host;
 }
 
 /// A written biography: its paragraphs, then where it was written from. A
-/// reader can open each source, which is the point of naming them.
+/// reader can open each source, which is the point of naming them. In English
+/// the text is the site's translation of the Bangla, and says so, as the
+/// website does.
 class BioCard extends StatelessWidget {
   final String text;
   final List<String> sources;
-  final String title;
+
+  /// "পরিচিতি" / "Profile" when not given.
+  final String? title;
   const BioCard({
     super.key,
     required this.text,
     this.sources = const [],
-    this.title = 'পরিচিতি',
+    this.title,
   });
 
   @override
@@ -53,7 +61,10 @@ class BioCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            title ?? t('পরিচিতি', 'Profile'),
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 10),
           for (var i = 0; i < paragraphs.length; i++) ...[
             if (i > 0) const SizedBox(height: 12),
@@ -62,6 +73,15 @@ class BioCard extends StatelessWidget {
               style: Theme.of(
                 context,
               ).textTheme.bodyLarge?.copyWith(height: 1.75),
+            ),
+          ],
+          if (t.en) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Translated from Bangla.',
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(fontStyle: FontStyle.italic),
             ),
           ],
           if (sources.isNotEmpty) ...[
@@ -73,7 +93,10 @@ class BioCard extends StatelessWidget {
               spacing: 6,
               runSpacing: 4,
               children: [
-                Text('সূত্র:', style: Theme.of(context).textTheme.labelSmall),
+                Text(
+                  t('সূত্র:', 'Sources:'),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
                 for (final url in sources)
                   InkWell(
                     onTap: () => openLink(context, url),

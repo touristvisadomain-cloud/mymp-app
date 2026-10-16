@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import '../api.dart';
 import '../bio.dart';
 import '../bn.dart';
+import '../i18n.dart';
 import '../loading.dart';
 import '../models.dart';
 import '../theme.dart';
@@ -23,7 +24,8 @@ class MemberScreen extends StatefulWidget {
   State<MemberScreen> createState() => _MemberScreenState();
 }
 
-class _MemberScreenState extends State<MemberScreen> {
+class _MemberScreenState extends State<MemberScreen>
+    with RefetchOnLang<MemberScreen> {
   late Future<MemberDetail> _detail;
   late Future<List<Story>> _feed;
 
@@ -40,6 +42,7 @@ class _MemberScreenState extends State<MemberScreen> {
     super.initState();
     _detail = Api.instance.member(widget.member.slug);
     _feed = Api.instance.memberFeed(widget.member.slug);
+    Api.instance.bootstrap.addListener(_onList);
     _scroll.addListener(() {
       final show =
           _scroll.hasClients &&
@@ -50,9 +53,29 @@ class _MemberScreenState extends State<MemberScreen> {
 
   @override
   void dispose() {
+    Api.instance.bootstrap.removeListener(_onList);
     _scroll.dispose();
     super.dispose();
   }
+
+  /// The page again in the new language.
+  @override
+  void onLangChanged() => setState(() {
+    _detail = Api.instance.member(widget.member.slug);
+    _feed = Api.instance.memberFeed(widget.member.slug);
+  });
+
+  /// The name, seat and office in the hero come with the list; when the list
+  /// is read again (in the other language) they are taken from the new one.
+  void _onList() {
+    if (mounted) setState(() {});
+  }
+
+  MemberBrief get _member =>
+      Api.instance.cached?.members
+          .where((m) => m.slug == widget.member.slug)
+          .firstOrNull ??
+      widget.member;
 
   Future<void> _open(String url) => openLink(context, url);
 
@@ -74,7 +97,7 @@ class _MemberScreenState extends State<MemberScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final m = widget.member;
+    final m = _member;
     return Scaffold(
       body: DefaultTabController(
         length: 2,
@@ -89,12 +112,12 @@ class _MemberScreenState extends State<MemberScreen> {
               systemOverlayStyle: SystemUiOverlayStyle.light,
               actions: [
                 IconButton(
-                  tooltip: 'শেয়ার',
+                  tooltip: t('শেয়ার', 'Share'),
                   icon: const Icon(Icons.share_outlined),
                   onPressed: () => SharePlus.instance.share(
                     ShareParams(
                       text:
-                          '${m.nameBn}, ${m.seatLabel}\n${Api.base}/mp/${m.slug}',
+                          '${m.nameBn}, ${m.seatLabel}\n${Api.page('/mp/${m.slug}')}',
                       subject: m.nameBn,
                     ),
                   ),
@@ -123,12 +146,15 @@ class _MemberScreenState extends State<MemberScreen> {
                   final top = MediaQuery.paddingOf(context).top;
                   final collapsed = kToolbarHeight + kTextTabBarHeight + top;
                   final open = _heroHeight + top;
-                  final t = ((box.maxHeight - collapsed) / (open - collapsed))
-                      .clamp(0.0, 1.0);
+                  final shown =
+                      ((box.maxHeight - collapsed) / (open - collapsed)).clamp(
+                        0.0,
+                        1.0,
+                      );
                   return FlexibleSpaceBar(
                     collapseMode: CollapseMode.parallax,
                     background: Opacity(
-                      opacity: ((t - 0.45) / 0.55).clamp(0.0, 1.0),
+                      opacity: ((shown - 0.45) / 0.55).clamp(0.0, 1.0),
                       child: _hero(context, m),
                     ),
                   );
@@ -153,9 +179,9 @@ class _MemberScreenState extends State<MemberScreen> {
                   fontSize: 14.5,
                   fontWeight: FontWeight.w500,
                 ),
-                tabs: const [
-                  Tab(text: 'পরিচিতি'),
-                  Tab(text: 'সংবাদ ও ভিডিও'),
+                tabs: [
+                  Tab(text: t('পরিচিতি', 'Profile')),
+                  Tab(text: t('সংবাদ ও ভিডিও', 'News and videos')),
                 ],
               ),
             ),
@@ -165,9 +191,14 @@ class _MemberScreenState extends State<MemberScreen> {
               _profileTab(),
               StoryList(
                 future: _feed,
-                emptyTitle: 'এখনো কোনো সংবাদ যুক্ত হয়নি',
-                emptyBody:
-                    'সংবাদমাধ্যমে ${m.nameBn}-এর নাম এলে তা এখানে দেখানো হবে।',
+                emptyTitle: t(
+                  'এখনো কোনো সংবাদ যুক্ত হয়নি',
+                  'No news has been added yet',
+                ),
+                emptyBody: t(
+                  'সংবাদমাধ্যমে ${m.nameBn}-এর নাম এলে তা এখানে দেখানো হবে।',
+                  'When the press names ${m.nameBn}, it will be shown here.',
+                ),
                 onRetry: () => setState(() {
                   _feed = Api.instance.memberFeed(m.slug);
                 }),
@@ -282,24 +313,34 @@ class _MemberScreenState extends State<MemberScreen> {
         _detail = Api.instance.member(widget.member.slug);
       }),
       builder: (context, d) {
+        final born = t.date(d.dateOfBirth);
         final facts = <({String label, String value})>[
-          if (d.partyNameBn != null) (label: 'দল', value: d.partyNameBn!),
-          if (d.partyRoleBn != null) (label: 'দলীয় পদ', value: d.partyRoleBn!),
+          if (d.partyNameBn != null)
+            (label: t('দল', 'Party'), value: d.partyNameBn!),
+          if (d.partyRoleBn != null)
+            (label: t('দলীয় পদ', 'Party post'), value: d.partyRoleBn!),
           if (d.ministryBn != null)
-            (label: 'মন্ত্রণালয়', value: d.ministryBn!),
+            (label: t('মন্ত্রণালয়', 'Ministry'), value: d.ministryBn!),
           if (d.brief.districtBn != null)
-            (label: 'জেলা', value: d.brief.districtBn!),
-          if (d.professionBn != null) (label: 'পেশা', value: d.professionBn!),
-          if (d.educationBn != null) (label: 'শিক্ষা', value: d.educationBn!),
+            (label: t('জেলা', 'District'), value: d.brief.districtBn!),
+          if (d.professionBn != null)
+            (label: t('পেশা', 'Profession'), value: d.professionBn!),
+          if (d.educationBn != null)
+            (label: t('শিক্ষা', 'Education'), value: d.educationBn!),
           if (d.birthPlaceBn != null)
-            (label: 'জন্মস্থান', value: d.birthPlaceBn!),
-          if (dateBn(d.dateOfBirth) != null)
-            (label: 'জন্ম', value: dateBn(d.dateOfBirth)!),
-          if (d.fatherBn != null) (label: 'পিতা', value: d.fatherBn!),
-          if (d.motherBn != null) (label: 'মাতা', value: d.motherBn!),
+            (label: t('জন্মস্থান', 'Birthplace'), value: d.birthPlaceBn!),
+          if (born != null) (label: t('জন্ম', 'Born'), value: born),
+          if (d.fatherBn != null)
+            (label: t('পিতা', 'Father'), value: d.fatherBn!),
+          if (d.motherBn != null)
+            (label: t('মাতা', 'Mother'), value: d.motherBn!),
           if (d.termsCount != null)
-            (label: 'নির্বাচিত', value: '${bn(d.termsCount!)} বার'),
-          if (d.isFreedomFighter) (label: 'মুক্তিযোদ্ধা', value: 'হ্যাঁ'),
+            (label: t('নির্বাচিত', 'Elected'), value: _times(d.termsCount!)),
+          if (d.isFreedomFighter)
+            (
+              label: t('মুক্তিযোদ্ধা', 'Freedom fighter'),
+              value: t('হ্যাঁ', 'Yes'),
+            ),
         ];
 
         return RefreshIndicator(
@@ -318,10 +359,13 @@ class _MemberScreenState extends State<MemberScreen> {
               if (d.bioBn != null)
                 BioCard(text: d.bioBn!, sources: d.bioSources)
               else if (d.summaryBn != null)
-                BioCard(text: d.summaryBn!, title: 'সংক্ষিপ্ত পরিচিতি'),
+                BioCard(
+                  text: d.summaryBn!,
+                  title: t('সংক্ষিপ্ত পরিচিতি', 'Brief profile'),
+                ),
               if (facts.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                FactsCard(title: 'তথ্য', facts: facts),
+                FactsCard(title: t('তথ্য', 'Details'), facts: facts),
               ],
               if (d.result != null) ...[
                 const SizedBox(height: 12),
@@ -331,7 +375,7 @@ class _MemberScreenState extends State<MemberScreen> {
                 const SizedBox(height: 12),
                 _card(
                   context,
-                  'সংসদীয় কমিটি',
+                  t('সংসদীয় কমিটি', 'Parliamentary committees'),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -367,14 +411,18 @@ class _MemberScreenState extends State<MemberScreen> {
                 const SizedBox(height: 12),
                 _card(
                   context,
-                  'আগের মেয়াদ',
+                  t('আগের মেয়াদ', 'Earlier terms'),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      for (final t in d.priorTerms)
+                      for (final term in d.priorTerms)
                         Pill(
-                          '${bn(t.parliamentNo)}ম সংসদ${t.seatBn != null ? ', ${t.seatBn}' : ''}',
+                          t(
+                                '${bn(term.parliamentNo)}ম সংসদ',
+                                '${t.ord(term.parliamentNo)} Parliament',
+                              ) +
+                              (term.seatBn != null ? ', ${term.seatBn}' : ''),
                         ),
                     ],
                   ),
@@ -386,7 +434,7 @@ class _MemberScreenState extends State<MemberScreen> {
                 const SizedBox(height: 12),
                 _card(
                   context,
-                  'যোগাযোগ ও লিংক',
+                  t('যোগাযোগ ও লিংক', 'Contact and links'),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -402,7 +450,7 @@ class _MemberScreenState extends State<MemberScreen> {
                           context,
                           Icons.open_in_new_rounded,
                           s.unverified
-                              ? '${s.label} (যাচাই করা হয়নি)'
+                              ? '${s.label} ${t('(যাচাই করা হয়নি)', '(not verified)')}'
                               : s.label,
                           () => _open(s.url),
                         ),
@@ -434,15 +482,15 @@ class _MemberScreenState extends State<MemberScreen> {
               const SizedBox(height: 16),
               Center(
                 child: TextButton.icon(
-                  onPressed: () => _open('${Api.base}/mp/${d.brief.slug}'),
+                  onPressed: () => _open(Api.page('/mp/${d.brief.slug}')),
                   icon: const Icon(
                     Icons.public_rounded,
                     size: 18,
                     color: AppColors.brand,
                   ),
-                  label: const Text(
-                    'ওয়েবসাইটে দেখুন',
-                    style: TextStyle(
+                  label: Text(
+                    t('ওয়েবসাইটে দেখুন', 'View on the website'),
+                    style: const TextStyle(
                       fontFamily: 'NotoSansBengali',
                       fontWeight: FontWeight.w600,
                       color: AppColors.brand,
@@ -453,7 +501,10 @@ class _MemberScreenState extends State<MemberScreen> {
               const SizedBox(height: 4),
               Center(
                 child: Text(
-                  'সূত্র: বাংলাদেশ জাতীয় সংসদ',
+                  t(
+                    'সূত্র: বাংলাদেশ জাতীয় সংসদ',
+                    'Source: Parliament of Bangladesh',
+                  ),
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
               ),
@@ -462,6 +513,13 @@ class _MemberScreenState extends State<MemberScreen> {
         );
       },
     );
+  }
+
+  /// "৩ বার" / "three times": how often the member has been elected.
+  static String _times(int n) {
+    if (!t.en) return '${bn(n)} বার';
+    const words = {1: 'once', 2: 'twice', 3: 'three times', 4: 'four times'};
+    return words[n] ?? '$n times';
   }
 
   Widget _card(BuildContext context, String title, Widget body) {

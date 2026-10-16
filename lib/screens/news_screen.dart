@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../brand_header.dart';
+import '../i18n.dart';
 import '../loading.dart';
 import '../models.dart';
 import '../widgets.dart';
@@ -18,7 +19,8 @@ class NewsScreen extends StatefulWidget {
   State<NewsScreen> createState() => _NewsScreenState();
 }
 
-class _NewsScreenState extends State<NewsScreen> {
+class _NewsScreenState extends State<NewsScreen>
+    with RefetchOnLang<NewsScreen> {
   String? _type;
   late Future<List<Story>> _future = Api.instance.news(type: 'news');
   late Future<List<Story>> _videos = Api.instance.news(
@@ -35,21 +37,28 @@ class _NewsScreenState extends State<NewsScreen> {
     });
   }
 
+  /// Headlines stay in Bangla, but the outlets and members beside them change.
+  @override
+  void onLangChanged() => _load(type: _type);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Column(
         children: [
           BrandHeader(
-            title: 'সংবাদ',
-            subtitle: 'সংসদ সদস্যদের নিয়ে শিরোনাম ও ভিডিও',
+            title: t('সংবাদ', 'News'),
+            subtitle: t(
+              'সংসদ সদস্যদের নিয়ে শিরোনাম ও ভিডিও',
+              'Headlines and videos about MPs',
+            ),
             bottom: ChipBar(
               onDark: true,
               padding: EdgeInsets.zero,
-              options: const [
-                (label: 'সব', value: null),
-                (label: 'সংবাদ', value: 'news'),
-                (label: 'ভিডিও', value: 'video'),
+              options: [
+                (label: t('সব', 'All'), value: null),
+                (label: t('সংবাদ', 'News'), value: 'news'),
+                (label: t('ভিডিও', 'Videos'), value: 'video'),
               ],
               selected: _type,
               onSelect: (v) => _load(type: v),
@@ -72,8 +81,11 @@ class _NewsScreenState extends State<NewsScreen> {
                           : const SizedBox.shrink(),
                     )
                   : null,
-              emptyTitle: 'এখন কোনো খবর নেই',
-              emptyBody: 'নতুন শিরোনাম এলে এখানে দেখা যাবে।',
+              emptyTitle: t('এখন কোনো খবর নেই', 'No news right now'),
+              emptyBody: t(
+                'নতুন শিরোনাম এলে এখানে দেখা যাবে।',
+                'New headlines will appear here.',
+              ),
               onRetry: () => _load(type: _type),
               onRefresh: () async {
                 _load(type: _type);

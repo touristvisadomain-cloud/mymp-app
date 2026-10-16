@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import '../api.dart';
 import '../bio.dart';
 import '../bn.dart';
+import '../i18n.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -27,8 +28,14 @@ class AdviserScreen extends StatefulWidget {
   State<AdviserScreen> createState() => _AdviserScreenState();
 }
 
-class _AdviserScreenState extends State<AdviserScreen> {
+class _AdviserScreenState extends State<AdviserScreen>
+    with RefetchOnLang<AdviserScreen> {
   late Future<AdviserDetail> _future = Api.instance.adviser(widget.slug);
+
+  @override
+  void onLangChanged() => setState(() {
+    _future = Api.instance.adviser(widget.slug);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -36,18 +43,27 @@ class _AdviserScreenState extends State<AdviserScreen> {
       appBar: AppBar(
         title: FutureBuilder<AdviserDetail>(
           future: _future,
-          builder: (context, snap) => Text(snap.data?.roleBn ?? 'মন্ত্রিসভা'),
+          builder: (context, snap) =>
+              Text(snap.data?.roleBn ?? t('মন্ত্রিসভা', 'Cabinet')),
         ),
         actions: [
           IconButton(
-            tooltip: 'শেয়ার',
+            tooltip: t('শেয়ার', 'Share'),
             icon: const Icon(Icons.share_outlined),
-            onPressed: () => SharePlus.instance.share(
-              ShareParams(
-                text: '${widget.nameBn}\n${Api.base}/ministers/${widget.slug}',
-                subject: widget.nameBn,
-              ),
-            ),
+            onPressed: () async {
+              // The name in the reader's language once the page has it.
+              var name = widget.nameBn;
+              try {
+                final a = await _future;
+                if (a.nameBn.isNotEmpty) name = a.nameBn;
+              } catch (_) {}
+              await SharePlus.instance.share(
+                ShareParams(
+                  text: '$name\n${Api.page('/ministers/${widget.slug}')}',
+                  subject: name,
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -61,7 +77,8 @@ class _AdviserScreenState extends State<AdviserScreen> {
           }
           if (snap.hasError || !snap.hasData) {
             return ErrorView(
-              message: '${snap.error ?? 'তথ্য পাওয়া যায়নি'}',
+              message:
+                  '${snap.error ?? t('তথ্য পাওয়া যায়নি', 'No information found')}',
               onRetry: () => setState(() {
                 _future = Api.instance.adviser(widget.slug);
               }),
@@ -69,13 +86,16 @@ class _AdviserScreenState extends State<AdviserScreen> {
           }
           final a = snap.data!;
           final facts = <({String label, String value})>[
-            if (a.rankBn != null) (label: 'পদমর্যাদা', value: a.rankBn!),
+            if (a.rankBn != null)
+              (label: t('পদমর্যাদা', 'Rank'), value: a.rankBn!),
             if (a.partyRoleBn != null)
-              (label: 'দলীয় পদ', value: a.partyRoleBn!),
-            if (a.professionBn != null) (label: 'পেশা', value: a.professionBn!),
-            if (a.educationBn != null) (label: 'শিক্ষা', value: a.educationBn!),
+              (label: t('দলীয় পদ', 'Party post'), value: a.partyRoleBn!),
+            if (a.professionBn != null)
+              (label: t('পেশা', 'Profession'), value: a.professionBn!),
+            if (a.educationBn != null)
+              (label: t('শিক্ষা', 'Education'), value: a.educationBn!),
             if (a.birthPlaceBn != null)
-              (label: 'জন্মস্থান', value: a.birthPlaceBn!),
+              (label: t('জন্মস্থান', 'Birthplace'), value: a.birthPlaceBn!),
           ];
 
           return ListView(
@@ -92,10 +112,13 @@ class _AdviserScreenState extends State<AdviserScreen> {
                 _posts(context, a.posts),
                 const SizedBox(height: 12),
               ],
-              BioCard(text: a.bioBn, sources: a.sources),
+              // An English page with no English biography leaves it out,
+              // rather than show an empty card.
+              if (a.bioBn.trim().isNotEmpty)
+                BioCard(text: a.bioBn, sources: a.sources),
               if (facts.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                FactsCard(title: 'তথ্য', facts: facts),
+                FactsCard(title: t('তথ্য', 'Details'), facts: facts),
               ],
             ],
           );
@@ -145,7 +168,10 @@ class _AdviserScreenState extends State<AdviserScreen> {
                 runSpacing: 6,
                 children: [
                   if (a.rankBn != null) Pill(a.rankBn!),
-                  const Pill('সংসদ সদস্য নন', colour: AppColors.muted),
+                  Pill(
+                    t('সংসদ সদস্য নন', 'Not an MP'),
+                    colour: AppColors.muted,
+                  ),
                 ],
               ),
             ],
@@ -166,7 +192,10 @@ class _AdviserScreenState extends State<AdviserScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('দায়িত্ব', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            t('দায়িত্ব', 'Responsibilities'),
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 8),
           for (final p in posts)
             Padding(
@@ -187,9 +216,9 @@ class _AdviserScreenState extends State<AdviserScreen> {
                           style: Theme.of(context).textTheme.bodyLarge
                               ?.copyWith(fontWeight: FontWeight.w600),
                         ),
-                        if (dateBn(p.fromDate) != null)
+                        if (t.date(p.fromDate) case final from?)
                           Text(
-                            '${dateBn(p.fromDate)} থেকে',
+                            t('$from থেকে', 'Since $from'),
                             style: Theme.of(context).textTheme.labelSmall,
                           ),
                       ],

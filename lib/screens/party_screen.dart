@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
-import '../bn.dart';
+import '../i18n.dart';
 import '../models.dart';
 import '../party_logo.dart';
 import '../theme.dart';
@@ -16,8 +16,21 @@ class PartyScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Redrawn when the list changes, which it does after a language switch:
+    // the party and its members are then read again in the new language.
+    return ValueListenableBuilder<Bootstrap?>(
+      valueListenable: Api.instance.bootstrap,
+      builder: (context, _, _) => _page(context),
+    );
+  }
+
+  Widget _page(BuildContext context) {
+    final data = Api.instance.cached;
+    final party =
+        data?.parties.where((p) => p.abbr == this.party.abbr).firstOrNull ??
+        this.party;
     final members =
-        (Api.instance.cached?.members ?? const <MemberBrief>[])
+        (data?.members ?? const <MemberBrief>[])
             .where((m) => m.party == party.abbr)
             .toList()
           ..sort((a, b) => (a.seatNo ?? 9999).compareTo(b.seatNo ?? 9999));
@@ -26,10 +39,13 @@ class PartyScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(party.nameBn)),
       body: members.isEmpty
-          ? const EmptyState(
+          ? EmptyState(
               icon: Icons.group_outlined,
-              title: 'কোনো সদস্য নেই',
-              body: 'এই দলের কোনো নির্বাচিত সদস্য তালিকায় নেই।',
+              title: t('কোনো সদস্য নেই', 'No members'),
+              body: t(
+                'এই দলের কোনো নির্বাচিত সদস্য তালিকায় নেই।',
+                'No elected member of this party is on the list.',
+              ),
             )
           : ListView.separated(
               padding: EdgeInsets.fromLTRB(
@@ -55,7 +71,12 @@ class PartyScreen extends StatelessWidget {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            '${bn(members.length)} জন সংসদ সদস্য',
+                            t.count(
+                              members.length,
+                              ' জন সংসদ সদস্য',
+                              'Member of Parliament',
+                              'Members of Parliament',
+                            ),
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                         ),

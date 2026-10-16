@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../bn.dart';
+import '../i18n.dart';
 import '../loading.dart';
 import '../models.dart';
 import '../theme.dart';
@@ -27,8 +28,14 @@ class ElectionScreen extends StatefulWidget {
   State<ElectionScreen> createState() => _ElectionScreenState();
 }
 
-class _ElectionScreenState extends State<ElectionScreen> {
+class _ElectionScreenState extends State<ElectionScreen>
+    with RefetchOnLang<ElectionScreen> {
   late Future<Map<String, dynamic>> _future = Api.instance.election();
+
+  @override
+  void onLangChanged() => setState(() {
+    _future = Api.instance.election();
+  });
 
   Future<void> _refresh() async {
     final f = Api.instance.election(force: true);
@@ -45,7 +52,9 @@ class _ElectionScreenState extends State<ElectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('নির্বাচন পরিসংখ্যান')),
+      appBar: AppBar(
+        title: Text(t('নির্বাচন পরিসংখ্যান', 'Election statistics')),
+      ),
       body: Loaded<Map<String, dynamic>>(
         future: _future,
         onRetry: () => setState(() {
@@ -89,25 +98,30 @@ class _ElectionScreenState extends State<ElectionScreen> {
         ),
         const SizedBox(height: 12),
         _Section(
-          title: 'গুরুত্বপূর্ণ তারিখ',
+          title: t('গুরুত্বপূর্ণ তারিখ', 'Key dates'),
           child: _Grid(
             items: [
-              for (final (label, key) in const [
-                ('ভোটগ্রহণ', 'election'),
-                ('গেজেট', 'gazette'),
-                ('শপথ', 'oath'),
-                ('মেয়াদ শেষ', 'end'),
+              for (final (label, key) in [
+                (t('ভোটগ্রহণ', 'Polling day'), 'election'),
+                (t('গেজেট', 'Gazette'), 'gazette'),
+                (t('শপথ', 'Oath'), 'oath'),
+                (t('মেয়াদ শেষ', 'Term ends'), 'end'),
               ])
-                (value: dateBn(_str(dates[key])) ?? 'তারিখ নেই', label: label),
+                (
+                  value: t.date(_str(dates[key])) ?? t('তারিখ নেই', 'No date'),
+                  label: label,
+                ),
             ],
             valueSize: 15,
           ),
         ),
         const SizedBox(height: 12),
         _Section(
-          title: 'সংসদের গঠন',
-          subtitle:
-              'সংরক্ষিত আসনসহ ${bn(total)} জন। কালো দাগ সংখ্যাগরিষ্ঠতার ${bn(majority)} আসন।',
+          title: t('সংসদের গঠন', 'Make-up of Parliament'),
+          subtitle: t(
+            'সংরক্ষিত আসনসহ ${bn(total)} জন। কালো দাগ সংখ্যাগরিষ্ঠতার ${bn(majority)} আসন।',
+            '$total members, including the reserved seats. The black line marks a majority: $majority seats.',
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -127,32 +141,40 @@ class _ElectionScreenState extends State<ElectionScreen> {
                 _PartyRow(
                   abbr: _str(p['abbr']),
                   label: _str(p['labelBn']) ?? '',
-                  value: '${bn(_n(p['seats']))} আসন',
-                  note: 'সাধারণ আসনে ${bn(_n(p['seatsTerritorial']))}',
+                  value: t.count(_n(p['seats']), ' আসন', 'seat', 'seats'),
+                  note: t(
+                    'সাধারণ আসনে ${bn(_n(p['seatsTerritorial']))}',
+                    '${_n(p['seatsTerritorial'])} in general seats',
+                  ),
                 ),
             ],
           ),
         ),
         const SizedBox(height: 12),
         _Section(
-          title: 'ভোটার ও ভোটকেন্দ্র',
-          subtitle: 'সারা দেশের হিসাব',
-          footer:
-              'সূত্র: ${voters['sourceBn'] ?? 'নির্বাচন কমিশন'}${dateBn(_str(voters['readOn'])) != null ? ', পড়া হয়েছে ${dateBn(_str(voters['readOn']))}' : ''}',
+          title: t('ভোটার ও ভোটকেন্দ্র', 'Voters and polling centres'),
+          subtitle: t('সারা দেশের হিসাব', 'Figures for the whole country'),
+          footer: _votersSource(voters),
           child: Column(
             children: [
               _Grid(
                 items: [
                   (
-                    value: bnGroup(_n(voters['registered'])),
-                    label: 'মোট ভোটার',
+                    value: t.group(_n(voters['registered'])),
+                    label: t('মোট ভোটার', 'Total voters'),
                   ),
                   (
-                    value: bnGroup(_n(voters['pollingCentres'])),
-                    label: 'ভোটকেন্দ্র',
+                    value: t.group(_n(voters['pollingCentres'])),
+                    label: t('ভোটকেন্দ্র', 'Polling centres'),
                   ),
-                  (value: bnGroup(_n(voters['male'])), label: 'পুরুষ ভোটার'),
-                  (value: bnGroup(_n(voters['female'])), label: 'নারী ভোটার'),
+                  (
+                    value: t.group(_n(voters['male'])),
+                    label: t('পুরুষ ভোটার', 'Male voters'),
+                  ),
+                  (
+                    value: t.group(_n(voters['female'])),
+                    label: t('নারী ভোটার', 'Female voters'),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -167,12 +189,12 @@ class _ElectionScreenState extends State<ElectionScreen> {
               Row(
                 children: [
                   Text(
-                    'পুরুষ ${pctBn(_n(voters['male']), _n(voters['registered']))}',
+                    '${t('পুরুষ', 'Male')} ${t.pct(_n(voters['male']), _n(voters['registered']))}',
                     style: text.labelSmall,
                   ),
                   const Spacer(),
                   Text(
-                    'নারী ${pctBn(_n(voters['female']), _n(voters['registered']))}',
+                    '${t('নারী', 'Female')} ${t.pct(_n(voters['female']), _n(voters['registered']))}',
                     style: text.labelSmall,
                   ),
                 ],
@@ -183,9 +205,11 @@ class _ElectionScreenState extends State<ElectionScreen> {
         if (totalVotes > 0) ...[
           const SizedBox(height: 12),
           _Section(
-            title: 'দলভিত্তিক ভোট',
-            subtitle:
-                '${bn(_n(results['seatsCounted']))}টি আসনে প্রার্থীরা মোট ${bnGroup(totalVotes)} ভোট পেয়েছেন',
+            title: t('দলভিত্তিক ভোট', 'Votes by party'),
+            subtitle: t(
+              '${bn(_n(results['seatsCounted']))}টি আসনে প্রার্থীরা মোট ${bnGroup(totalVotes)} ভোট পেয়েছেন',
+              'Candidates won ${t.group(totalVotes)} votes in all across ${t.count(_n(results['seatsCounted']), '', 'seat', 'seats')}',
+            ),
             footer: _str(results['sourceBn']),
             child: Column(
               children: [
@@ -203,7 +227,7 @@ class _ElectionScreenState extends State<ElectionScreen> {
         if (_list(results['closest']).isNotEmpty) ...[
           const SizedBox(height: 12),
           _Section(
-            title: 'সবচেয়ে কম ব্যবধানে জয়',
+            title: t('সবচেয়ে কম ব্যবধানে জয়', 'Narrowest wins'),
             child: _MarginList(
               rows: _list(results['closest']),
               onOpen: _openMember,
@@ -213,7 +237,7 @@ class _ElectionScreenState extends State<ElectionScreen> {
         if (_list(results['widest']).isNotEmpty) ...[
           const SizedBox(height: 12),
           _Section(
-            title: 'সবচেয়ে বড় ব্যবধানে জয়',
+            title: t('সবচেয়ে বড় ব্যবধানে জয়', 'Widest wins'),
             child: _MarginList(
               rows: _list(results['widest']),
               onOpen: _openMember,
@@ -222,38 +246,47 @@ class _ElectionScreenState extends State<ElectionScreen> {
         ],
         const SizedBox(height: 12),
         _Section(
-          title: 'নির্বাচিত সদস্যরা',
-          subtitle: 'বর্তমান ${bn(total)} জন সংসদ সদস্যের তথ্য থেকে',
+          title: t('নির্বাচিত সদস্যরা', 'The members elected'),
+          subtitle: t(
+            'বর্তমান ${bn(total)} জন সংসদ সদস্যের তথ্য থেকে',
+            'From the records of the $total current MPs',
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _Grid(
                 items: [
-                  (value: '${bn(_n(people['women']))} জন', label: 'নারী সদস্য'),
+                  (
+                    value: _people(_n(people['women'])),
+                    label: t('নারী সদস্য', 'Women members'),
+                  ),
                   (
                     value: people['medianAge'] is num
-                        ? '${bn(_n(people['medianAge']))} বছর'
-                        : 'তথ্য নেই',
-                    label: 'বয়সের মধ্যক',
+                        ? _years(_n(people['medianAge']))
+                        : t('তথ্য নেই', 'No data'),
+                    label: t('বয়সের মধ্যক', 'Median age'),
                   ),
                   (
-                    value: '${bn(_n(people['firstTime']))} জন',
-                    label: 'প্রথমবার সংসদে',
+                    value: _people(_n(people['firstTime'])),
+                    label: t('প্রথমবার সংসদে', 'First time in Parliament'),
                   ),
                   (
-                    value: '${bn(_n(people['freedomFighters']))} জন',
-                    label: 'মুক্তিযোদ্ধা',
+                    value: _people(_n(people['freedomFighters'])),
+                    label: t('মুক্তিযোদ্ধা', 'Freedom fighters'),
                   ),
                 ],
               ),
               const SizedBox(height: 6),
               Text(
-                'নারী সদস্যদের ${bn(_n(people['womenTerritorial']))} জন সাধারণ আসনে নির্বাচিত, ${bn(_n(people['womenReserved']))} জন সংরক্ষিত আসনে।',
+                t(
+                  'নারী সদস্যদের ${bn(_n(people['womenTerritorial']))} জন সাধারণ আসনে নির্বাচিত, ${bn(_n(people['womenReserved']))} জন সংরক্ষিত আসনে।',
+                  'Of the women members, ${_n(people['womenTerritorial'])} were elected to general seats and ${_n(people['womenReserved'])} hold reserved seats.',
+                ),
                 style: text.labelSmall?.copyWith(height: 1.5),
               ),
-              for (final (key, label) in const [
-                ('youngest', 'সর্বকনিষ্ঠ'),
-                ('oldest', 'সর্বজ্যেষ্ঠ'),
+              for (final (key, label) in [
+                ('youngest', t('সর্বকনিষ্ঠ', 'Youngest')),
+                ('oldest', t('সর্বজ্যেষ্ঠ', 'Oldest')),
               ])
                 if (people[key] is Map<String, dynamic>)
                   _PersonRow(
@@ -261,7 +294,7 @@ class _ElectionScreenState extends State<ElectionScreen> {
                     member: MemberBrief.fromJson(
                       _map(_map(people[key])['member']),
                     ),
-                    trailing: '${bn(_n(_map(people[key])['age']))} বছর',
+                    trailing: _years(_n(_map(people[key])['age'])),
                     onOpen: _openMember,
                   ),
             ],
@@ -269,7 +302,7 @@ class _ElectionScreenState extends State<ElectionScreen> {
         ),
         const SizedBox(height: 12),
         _Section(
-          title: 'বয়স',
+          title: t('বয়স', 'Age'),
           child: _Bars(
             rows: [
               for (final b in _list(people['ageBands']))
@@ -279,9 +312,11 @@ class _ElectionScreenState extends State<ElectionScreen> {
         ),
         const SizedBox(height: 12),
         _Section(
-          title: 'সংসদে অভিজ্ঞতা',
-          subtitle:
-              '${bn(_n(people['firstTime']))} জন এবারই প্রথম, ${bn(_n(people['returning']))} জন আগেও সদস্য ছিলেন',
+          title: t('সংসদে অভিজ্ঞতা', 'Experience in Parliament'),
+          subtitle: t(
+            '${bn(_n(people['firstTime']))} জন এবারই প্রথম, ${bn(_n(people['returning']))} জন আগেও সদস্য ছিলেন',
+            '${_n(people['firstTime'])} for the first time, ${_n(people['returning'])} were members before',
+          ),
           child: _Bars(
             rows: [
               for (final b in _list(people['experience']))
@@ -293,8 +328,11 @@ class _ElectionScreenState extends State<ElectionScreen> {
         if (_list(people['professions']).isNotEmpty) ...[
           const SizedBox(height: 12),
           _Section(
-            title: 'পেশা',
-            subtitle: 'সংসদের তথ্যভান্ডারে লিপিবদ্ধ পেশা অনুযায়ী',
+            title: t('পেশা', 'Profession'),
+            subtitle: t(
+              'সংসদের তথ্যভান্ডারে লিপিবদ্ধ পেশা অনুযায়ী',
+              'By the profession recorded in Parliament’s database',
+            ),
             child: _Bars(
               rows: [
                 for (final b in _list(people['professions']))
@@ -306,7 +344,11 @@ class _ElectionScreenState extends State<ElectionScreen> {
         ],
         const SizedBox(height: 18),
         Text(
-          'সদস্যদের তথ্য জাতীয় সংসদের ওয়েবসাইট থেকে, ভোটার সংখ্যা নির্বাচন কমিশন থেকে। আমার এমপি একটি স্বাধীন, বেসরকারি তথ্যসেবা।',
+          t(
+            'সদস্যদের তথ্য জাতীয় সংসদের ওয়েবসাইট থেকে, ভোটার সংখ্যা নির্বাচন কমিশন থেকে। আমার এমপি একটি স্বাধীন, বেসরকারি তথ্যসেবা।',
+            'Members’ information is from Parliament’s website, voter numbers from the Election Commission. '
+                'My MP is an independent, non-governmental information service.',
+          ),
           textAlign: TextAlign.center,
           style: text.labelSmall?.copyWith(height: 1.5),
         ),
@@ -314,6 +356,23 @@ class _ElectionScreenState extends State<ElectionScreen> {
     );
   }
 }
+
+/// "সূত্র: নির্বাচন কমিশন, পড়া হয়েছে ১ জানুয়ারি ২০২৬" under the voter figures.
+String _votersSource(Map<String, dynamic> voters) {
+  final source =
+      _str(voters['sourceBn']) ?? t('নির্বাচন কমিশন', 'Election Commission');
+  final read = t.date(_str(voters['readOn']));
+  return t(
+    'সূত্র: $source${read != null ? ', পড়া হয়েছে $read' : ''}',
+    'Source: $source${read != null ? ', read on $read' : ''}',
+  );
+}
+
+/// "৪৫ জন" / "45": a number of people, as a figure in the grid.
+String _people(int n) => t('${bn(n)} জন', '$n');
+
+/// "৫৫ বছর" / "55 years".
+String _years(int n) => t('${bn(n)} বছর', '$n ${plural(n, 'year', 'years')}');
 
 class _Hero extends StatelessWidget {
   final int parliamentNo;
@@ -349,7 +408,7 @@ class _Hero extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                dateBn(electionDate) ?? '২০২৬',
+                t.date(electionDate) ?? t.n(2026),
                 style: white.copyWith(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -360,7 +419,10 @@ class _Hero extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${parliamentBn(parliamentNo)} জাতীয় সংসদ নির্বাচন',
+            t(
+              '${parliamentBn(parliamentNo)} জাতীয় সংসদ নির্বাচন',
+              'Election to the ${t.ord(parliamentNo)} Parliament',
+            ),
             style: white.copyWith(
               fontSize: 21,
               fontWeight: FontWeight.w800,
@@ -370,9 +432,9 @@ class _Hero extends StatelessWidget {
           const SizedBox(height: 14),
           Row(
             children: [
-              _heroStat('৩০০', 'সাধারণ আসন'),
-              _heroStat('৫০', 'সংরক্ষিত আসন'),
-              _heroStat(bn(total), 'বর্তমান সদস্য'),
+              _heroStat(t.n(300), t('সাধারণ আসন', 'General seats')),
+              _heroStat(t.n(50), t('সংরক্ষিত আসন', 'Reserved seats')),
+              _heroStat(t.n(total), t('বর্তমান সদস্য', 'Current members')),
             ],
           ),
         ],
@@ -636,7 +698,7 @@ class _ShareRow extends StatelessWidget {
                 ),
               ),
               Text(
-                pctBn(votes, total),
+                t.pct(votes, total),
                 style: const TextStyle(
                   fontFamily: 'NotoSansBengali',
                   fontSize: 14,
@@ -658,7 +720,9 @@ class _ShareRow extends StatelessWidget {
           ),
           const SizedBox(height: 3),
           Text(
-            '${bnGroup(votes)} ভোট',
+            t.en
+                ? '${t.group(votes)} ${plural(votes, 'vote', 'votes')}'
+                : '${t.group(votes)} ভোট',
             style: Theme.of(context).textTheme.labelSmall,
           ),
         ],
@@ -741,9 +805,12 @@ class _MarginList extends StatelessWidget {
             _PersonRow(
               label: _str(r['seatBn']) ?? '',
               member: MemberBrief.fromJson(_map(r['member'])),
-              trailing: '${bnGroup(_n(r['margin']))} ভোটে',
+              trailing: t(
+                '${t.group(_n(r['margin']))} ভোটে',
+                'by ${t.group(_n(r['margin']))}',
+              ),
               note: r['runnerUpParty'] != null
-                  ? 'নিকটতম: ${r['runnerUpParty']}'
+                  ? '${t('নিকটতম: ', 'Runner-up: ')}${r['runnerUpParty']}'
                   : null,
               onOpen: onOpen,
             ),

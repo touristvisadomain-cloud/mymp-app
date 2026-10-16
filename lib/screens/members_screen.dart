@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../api.dart';
 import '../bn.dart';
 import '../brand_header.dart';
+import '../i18n.dart';
 import '../loading.dart';
 import '../models.dart';
 import '../party_logo.dart';
@@ -23,7 +24,8 @@ class MembersScreen extends StatefulWidget {
   State<MembersScreen> createState() => _MembersScreenState();
 }
 
-class _MembersScreenState extends State<MembersScreen> {
+class _MembersScreenState extends State<MembersScreen>
+    with RefetchOnLang<MembersScreen> {
   final _search = TextEditingController();
   late Future<Bootstrap> _future;
   String _query = '';
@@ -55,6 +57,14 @@ class _MembersScreenState extends State<MembersScreen> {
       });
     }
   }
+
+  /// The list again in the new language. A district picked in the old one
+  /// names nothing in the new list, so the district filter is let go.
+  @override
+  void onLangChanged() => setState(() {
+    _district = null;
+    _future = Api.instance.loadBootstrap();
+  });
 
   @override
   void dispose() {
@@ -181,9 +191,12 @@ class _MembersScreenState extends State<MembersScreen> {
                     hasScrollBody: false,
                     child: EmptyState(
                       icon: Icons.search_off_rounded,
-                      title: 'কাউকে পাওয়া যায়নি',
-                      body: 'নাম, আসন বা জেলা দিয়ে আবার খুঁজে দেখুন।',
-                      actionLabel: 'সব দেখুন',
+                      title: t('কাউকে পাওয়া যায়নি', 'No one found'),
+                      body: t(
+                        'নাম, আসন বা জেলা দিয়ে আবার খুঁজে দেখুন।',
+                        'Try searching again by name, seat or district.',
+                      ),
+                      actionLabel: t('সব দেখুন', 'Show all'),
                       onAction: _clearAll,
                     ),
                   )
@@ -220,23 +233,38 @@ class _MembersScreenState extends State<MembersScreen> {
 
   Widget _header(Bootstrap data) {
     return BrandHeader(
-      title: 'সংসদ সদস্য',
-      subtitle: '${parliamentBn(data.parliamentNo)} জাতীয় সংসদ',
+      title: t('সংসদ সদস্য', 'Members of Parliament'),
+      subtitle: t(
+        '${parliamentBn(data.parliamentNo)} জাতীয় সংসদ',
+        '${t.ord(data.parliamentNo)} Parliament',
+      ),
       bottom: Column(
         children: [
           Row(
             children: [
-              HeaderStat(value: bn(data.members.length), label: 'সদস্য'),
+              HeaderStat(
+                value: t.n(data.members.length),
+                label: t('সদস্য', 'Members'),
+              ),
               const SizedBox(width: 8),
-              HeaderStat(value: bn(data.parties.length), label: 'দল'),
+              HeaderStat(
+                value: t.n(data.parties.length),
+                label: t('দল', 'Parties'),
+              ),
               const SizedBox(width: 8),
-              HeaderStat(value: bn(data.districts.length), label: 'জেলা'),
+              HeaderStat(
+                value: t.n(data.districts.length),
+                label: t('জেলা', 'Districts'),
+              ),
             ],
           ),
           const SizedBox(height: 14),
           HeaderSearchField(
             controller: _search,
-            hint: 'নাম, আসন, জেলা বা উপজেলা (বাংলা/English)',
+            hint: t(
+              'নাম, আসন, জেলা বা উপজেলা (বাংলা/English)',
+              'Name, seat, district or upazila',
+            ),
             onChanged: (v) => setState(() => _query = v),
             onClear: () => setState(() {
               _search.clear();
@@ -256,9 +284,9 @@ class _MembersScreenState extends State<MembersScreen> {
         children: [
           ChipBar(
             options: [
-              (label: 'সব দল', value: null),
+              (label: t('সব দল', 'All parties'), value: null),
               ...data.parties.map(
-                (p) => (label: '${p.shortBn} ${bn(p.seats)}', value: p.abbr),
+                (p) => (label: '${p.shortBn} ${t.n(p.seats)}', value: p.abbr),
               ),
             ],
             selected: _party,
@@ -271,7 +299,7 @@ class _MembersScreenState extends State<MembersScreen> {
             child: Row(
               children: [
                 _DistrictButton(
-                  label: _district ?? 'সব জেলা',
+                  label: _district ?? t('সব জেলা', 'All districts'),
                   active: _district != null,
                   onTap: () => _pickDistrict(data.districts),
                   onClear: _district == null
@@ -280,7 +308,7 @@ class _MembersScreenState extends State<MembersScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  '${bn(shownCount)} জন',
+                  t.count(shownCount, ' জন', 'MP', 'MPs'),
                   style: const TextStyle(
                     fontFamily: 'NotoSansBengali',
                     fontSize: 13,
@@ -297,9 +325,9 @@ class _MembersScreenState extends State<MembersScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       minimumSize: const Size(0, 36),
                     ),
-                    child: const Text(
-                      'সব মুছুন',
-                      style: TextStyle(
+                    child: Text(
+                      t('সব মুছুন', 'Clear all'),
+                      style: const TextStyle(
                         fontFamily: 'NotoSansBengali',
                         fontWeight: FontWeight.w700,
                       ),
@@ -404,8 +432,10 @@ class _DistrictSheetState extends State<_DistrictSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Case does not matter to an English reader typing "dhaka".
+    final q = _q.toLowerCase();
     final list = widget.districts
-        .where((d) => _q.isEmpty || d.contains(_q))
+        .where((d) => q.isEmpty || d.toLowerCase().contains(q))
         .toList();
     return SafeArea(
       child: Padding(
@@ -436,16 +466,16 @@ class _DistrictSheetState extends State<_DistrictSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        'জেলা বেছে নিন',
+                        t('জেলা বেছে নিন', 'Choose a district'),
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
                     if (widget.selected != null)
                       TextButton(
                         onPressed: () => Navigator.of(context).pop(''),
-                        child: const Text(
-                          'সব জেলা',
-                          style: TextStyle(
+                        child: Text(
+                          t('সব জেলা', 'All districts'),
+                          style: const TextStyle(
                             fontFamily: 'NotoSansBengali',
                             fontWeight: FontWeight.w700,
                             color: AppColors.brand,
@@ -462,10 +492,10 @@ class _DistrictSheetState extends State<_DistrictSheet> {
                 child: TextField(
                   autofocus: false,
                   onChanged: (v) => setState(() => _q = v.trim()),
-                  decoration: const InputDecoration(
-                    hintText: 'জেলার নাম',
+                  decoration: InputDecoration(
+                    hintText: t('জেলার নাম', 'District name'),
                     isDense: true,
-                    prefixIcon: Icon(
+                    prefixIcon: const Icon(
                       Icons.search_rounded,
                       color: AppColors.muted,
                       size: 20,
@@ -541,8 +571,13 @@ class _Footnote extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'আমার এমপি একটি স্বাধীন, বেসরকারি তথ্যসেবা; সরকারি অ্যাপ নয়। তথ্যের সূত্র: জাতীয় সংসদ (parliament.gov.bd), '
-                'নির্বাচন কমিশন (ecs.gov.bd), মন্ত্রিপরিষদ বিভাগ (cabinet.gov.bd), দ্য বিজনেস স্ট্যান্ডার্ড ও উইকিপিডিয়া। সব সূত্র দেখতে চাপুন।',
+                t(
+                  'আমার এমপি একটি স্বাধীন, বেসরকারি তথ্যসেবা; সরকারি অ্যাপ নয়। তথ্যের সূত্র: জাতীয় সংসদ (parliament.gov.bd), '
+                      'নির্বাচন কমিশন (ecs.gov.bd), মন্ত্রিপরিষদ বিভাগ (cabinet.gov.bd), দ্য বিজনেস স্ট্যান্ডার্ড ও উইকিপিডিয়া। সব সূত্র দেখতে চাপুন।',
+                  'My MP is an independent, non-governmental information service; it is not a government app. Sources: '
+                      'Parliament (parliament.gov.bd), the Election Commission (ecs.gov.bd), the Cabinet Division '
+                      '(cabinet.gov.bd), The Business Standard and Wikipedia. Tap to see every source.',
+                ),
                 style: Theme.of(
                   context,
                 ).textTheme.labelSmall?.copyWith(height: 1.5),
