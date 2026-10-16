@@ -20,9 +20,17 @@ Everything comes from mymp.bd, read-only and unauthenticated:
 |---|---|
 | the member list, the parties, the districts | `/api/app/v1/bootstrap` |
 | one member's page | `/api/app/v1/mp/<slug>` |
-| the cabinet | `/api/app/v1/cabinet` |
-| news and videos, the whole house | `/api/app/v1/news` |
+| the cabinet, an adviser | `/api/app/v1/cabinet`, `/api/app/v1/adviser/<slug>` |
+| the election and the statistics | `/api/app/v1/election` |
+| news and videos, the whole house; today's and each month's counts | `/api/app/v1/news`, `/api/app/v1/news/counts` |
 | one member's news and videos | `/api/feed/<slug>` |
+| sessions, committees, a party | `/api/app/v1/sessions`, `/committees`, `/committee/<slug>`, `/party/<slug>` |
+| seats, a seat, a district, the reserved seats | `/api/app/v1/seats`, `/seat/<slug>`, `/district/<slug>`, `/reserved` |
+| a seat's and the country's map outlines | `/geo/<district>.json`, `/geo/overview.json` |
+
+Every route answers in English with `?lang=en` (the app adds it when the
+reader picks English). Each route's JSON, field by field, is in
+`docs/app-api.md` (a copy of the site repo's own).
 
 `bootstrap` is stored on the phone (`shared_preferences`) and shown at once on
 the next launch while a fresh copy is fetched behind it; the list is replaced

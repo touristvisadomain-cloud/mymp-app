@@ -108,9 +108,11 @@ List<InfoSource> get kOtherSources => [
 
 String get kNewsLine => t(
   'সংবাদ অংশের প্রতিটি শিরোনামের পাশে সংবাদমাধ্যমের নাম লেখা থাকে; চাপ দিলে সেই সংবাদমাধ্যমের নিজের সাইটে খোলে। '
+      'শিরোনাম আসে দেশি-বিদেশি সংবাদমাধ্যম থেকে; ভিডিও আসে শুধু এই সংবাদমাধ্যমগুলোর নিজস্ব ইউটিউব চ্যানেল থেকে। '
       'অ্যাপ নিজে কোনো সংবাদ লেখে না।',
   'In the News section, every headline is shown with the name of its news outlet; tapping it opens the story '
-      'on that outlet’s own site. The app itself writes no news.',
+      'on that outlet’s own site. Headlines come from news outlets in Bangladesh and abroad; videos come only '
+      'from these outlets’ own YouTube channels. The app itself writes no news.',
 );
 
 TextStyle _bn(double size, FontWeight weight, Color color, {double? height}) =>

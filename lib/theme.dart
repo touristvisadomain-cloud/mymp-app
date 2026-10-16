@@ -26,6 +26,8 @@ class AppColors {
   static const _party = <String, Color>{
     'BNP': Color(0xFF1F7A4F),
     'Jamaat': Color(0xFF8CBF2A),
+    // The site's code for Jamaat (data/parties.json); without it Jamaat drew in the "other" purple.
+    'BJEI': Color(0xFF8CBF2A),
     'Ind': Color(0xFF5B6FB5),
     'NCP': Color(0xFFE0641F),
   };

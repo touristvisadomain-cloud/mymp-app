@@ -178,13 +178,13 @@ class ElectionCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          t('নির্বাচন পরিসংখ্যান', 'Election statistics'),
+                          t('ত্রয়োদশ নির্বাচন', '2026 Election'),
                           style: text.titleMedium,
                         ),
                         Text(
                           t(
-                            'আসন, ভোট, ভোটার ও সদস্যদের হিসাব',
-                            'Seats, votes, voters and members in figures',
+                            'মানচিত্র, ফলাফল, ভোটার ও জেলা অনুযায়ী আসন',
+                            'Map, results, voters and seats by district',
                           ),
                           style: text.labelSmall,
                         ),

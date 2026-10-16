@@ -4,9 +4,15 @@ import 'package:flutter/services.dart';
 import 'disclaimer.dart';
 import 'i18n.dart';
 import 'screens/cabinet_screen.dart';
+import 'screens/district_screen.dart';
+import 'screens/election_parts.dart';
+import 'screens/member_screen.dart';
 import 'screens/members_screen.dart';
 import 'screens/more_screen.dart';
 import 'screens/news_screen.dart';
+import 'screens/party_screen.dart';
+import 'screens/reserved_screen.dart';
+import 'screens/seat_screen.dart';
 import 'theme.dart';
 
 Future<void> main() async {
@@ -22,7 +28,23 @@ Future<void> main() async {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
+  _wireLinks();
   runApp(const LangRoot(child: MyMpApp()));
+}
+
+/// Where a member's page links to: the app's own party, seat and district
+/// screens (the page leaves a link out while its hook is unset).
+void _wireLinks() {
+  void open(BuildContext context, Widget screen) =>
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+  MemberLinks.party = (context, slug) => open(context, PartyScreen.slug(slug));
+  MemberLinks.seat = (context, slug) => open(context, SeatScreen(slug: slug));
+  MemberLinks.district = (context, slug) => open(context, DistrictScreen(slug: slug));
+  // And the election page's.
+  ElectionLinks.seat = MemberLinks.seat;
+  ElectionLinks.district = MemberLinks.district;
+  ElectionLinks.party = MemberLinks.party;
+  ElectionLinks.reserved = (context) => open(context, const ReservedScreen());
 }
 
 class MyMpApp extends StatelessWidget {
@@ -79,11 +101,12 @@ class _ShellState extends State<Shell> {
 
   // Held in an IndexedStack, so a reader who scrolled the member list halfway
   // down and went to look at the news comes back to where they were.
-  final _screens = const [
-    MembersScreen(),
-    NewsScreen(),
-    CabinetScreen(),
-    MoreScreen(),
+  // The cabinet's "all members" chip switches to the members tab.
+  late final _screens = [
+    const MembersScreen(),
+    const NewsScreen(),
+    CabinetScreen(onShowMembers: () => setState(() => _index = 0)),
+    const MoreScreen(),
   ];
 
   @override

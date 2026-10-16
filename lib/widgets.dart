@@ -176,13 +176,20 @@ class MemberTile extends StatelessWidget {
                             color: AppColors.muted,
                           ),
                           const SizedBox(width: 3),
-                          Text(
-                            member.seatLabel,
-                            style: const TextStyle(
-                              fontFamily: 'NotoSansBengali',
-                              fontSize: 13,
-                              color: AppColors.muted,
-                              height: 1.3,
+                          // Shrinks before it overflows: an English seat name
+                          // ("Chapai Nawabganj-3") beside a party chip on a
+                          // small phone with a large font did not fit.
+                          Flexible(
+                            child: Text(
+                              member.seatLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'NotoSansBengali',
+                                fontSize: 13,
+                                color: AppColors.muted,
+                                height: 1.3,
+                              ),
                             ),
                           ),
                           if (member.party != null) ...[

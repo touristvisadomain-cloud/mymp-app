@@ -15,6 +15,11 @@ import '../widgets.dart';
 
 import 'leaders_strip.dart';
 import 'party_screen.dart';
+import 'sessions_screen.dart';
+import 'statistics_screen.dart';
+import 'seats_screen.dart';
+import 'reserved_screen.dart';
+import 'committees_screen.dart';
 
 /// The parties, and the handful of things a reader looks for once: where the
 /// figures come from, what the app stores, how to report a mistake.
@@ -76,6 +81,57 @@ class _MoreScreenState extends State<MoreScreen> {
                 const SizedBox(height: 18),
 
                 const ElectionCard(padding: EdgeInsets.zero),
+                const SizedBox(height: 18),
+
+                // The House, as the website's menu has it: seats, reserved
+                // seats, committees and sessions.
+                Text(
+                  t('সংসদ', 'Parliament'),
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: AppDecor.card(),
+                  child: Column(
+                    children: [
+                      _row(
+                        context,
+                        Icons.bar_chart_rounded,
+                        t('পরিসংখ্যান', 'Statistics'),
+                        () => _push(context, const StatisticsScreen()),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        context,
+                        Icons.map_outlined,
+                        t('সব আসন', 'All seats'),
+                        () => _push(context, const SeatsScreen()),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        context,
+                        Icons.woman_outlined,
+                        t('সংরক্ষিত নারী আসন', 'Reserved seats for women'),
+                        () => _push(context, const ReservedScreen()),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        context,
+                        Icons.groups_outlined,
+                        t('কমিটি', 'Committees'),
+                        () => _push(context, const CommitteesScreen()),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        context,
+                        Icons.event_note_outlined,
+                        t('অধিবেশন', 'Sessions'),
+                        () => _push(context, const SessionsScreen()),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 18),
 
                 if (parties.isNotEmpty) ...[
@@ -323,3 +379,7 @@ class _PartyRow extends StatelessWidget {
     );
   }
 }
+
+/// Opens one of the app's own screens.
+void _push(BuildContext context, Widget screen) =>
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));

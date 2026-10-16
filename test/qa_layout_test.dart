@@ -43,6 +43,8 @@ String _fixture(Uri url) {
     name = 'election';
   } else if (path.endsWith('/cabinet')) {
     name = 'cabinet';
+  } else if (path.endsWith('/news/counts')) {
+    name = 'news-counts';
   } else if (path.endsWith('/news')) {
     final type = url.queryParameters['type'];
     name = type == null ? 'news' : 'news-$type';
@@ -289,7 +291,7 @@ void main() {
             t,
             const ElectionScreen(),
             flings: 20,
-            shows: _tr('সংসদের গঠন', 'Make-up of Parliament'),
+            shows: _tr('ফলাফল', 'Results'),
           ),
           isEmpty,
         );
@@ -301,7 +303,7 @@ void main() {
             t,
             const NewsScreen(),
             flings: 10,
-            shows: _tr('ভিডিওতে সংসদ সদস্যরা', 'MPs on video'),
+            shows: _tr('সংবাদ কীভাবে যুক্ত হয়', 'How the news is added'),
           ),
           isEmpty,
         );
@@ -313,7 +315,7 @@ void main() {
             t,
             const CabinetScreen(),
             flings: 30,
-            shows: _tr('মোট', 'in office'),
+            shows: _tr('মন্ত্রিসভা দল অনুযায়ী', 'The Cabinet by party'),
           ),
           isEmpty,
         );
