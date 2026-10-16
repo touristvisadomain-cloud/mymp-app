@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../api.dart';
 import '../bn.dart';
 import '../brand_header.dart';
+import '../data/places.dart';
 import '../i18n.dart';
 import '../loading.dart';
 import '../models.dart';
@@ -14,9 +15,13 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'leaders_strip.dart';
 import 'member_screen.dart';
+import 'seat_screen.dart';
 
 /// The list every reader opens first: all 348 members, searchable by name, by
-/// seat and by district, filterable by party and district.
+/// seat and by district, filterable by party, district and kind of seat
+/// (elected or reserved, as the website's list has it). A query naming a
+/// place, an upazila, a union or a city ward, in Bangla or English, puts that
+/// place's member first, under "আপনার এলাকার এমপি".
 class MembersScreen extends StatefulWidget {
   const MembersScreen({super.key});
 
@@ -32,6 +37,12 @@ class _MembersScreenState extends State<MembersScreen>
   String? _party;
   String? _district;
 
+  /// null for every member, 'territorial' or 'reserved'.
+  String? _kind;
+
+  /// The seats' areas, for the place search; arrives after the list.
+  Places? _places;
+
   final _scroll = ScrollController();
   bool _headerGone = false;
 
@@ -43,6 +54,7 @@ class _MembersScreenState extends State<MembersScreen>
     // the background it replaces what is on screen in place: same scroll
     // position, same search, keyboard still open.
     Api.instance.bootstrap.addListener(_onFresh);
+    _loadPlaces();
     _scroll.addListener(() {
       final gone = _scroll.hasClients && _scroll.offset > 170;
       if (gone != _headerGone) setState(() => _headerGone = gone);
@@ -55,16 +67,32 @@ class _MembersScreenState extends State<MembersScreen>
       setState(() {
         _future = Future.value(fresh);
       });
+      if (_places?.version != fresh.version) _loadPlaces();
     }
+  }
+
+  /// The place search's data, read from the stored list; the search by name
+  /// works without it.
+  void _loadPlaces() {
+    final lang = appLang.value;
+    Places.load().then((p) {
+      if (mounted && p.lang == lang && lang == appLang.value) {
+        setState(() => _places = p);
+      }
+    }, onError: (Object _) {});
   }
 
   /// The list again in the new language. A district picked in the old one
   /// names nothing in the new list, so the district filter is let go.
   @override
-  void onLangChanged() => setState(() {
-    _district = null;
-    _future = Api.instance.loadBootstrap();
-  });
+  void onLangChanged() {
+    setState(() {
+      _district = null;
+      _places = null;
+      _future = Api.instance.loadBootstrap();
+    });
+    _loadPlaces();
+  }
 
   @override
   void dispose() {
@@ -87,30 +115,57 @@ class _MembersScreenState extends State<MembersScreen>
     _query = '';
     _party = null;
     _district = null;
+    _kind = null;
   });
 
   MemberSearch? _searchIndex;
   Bootstrap? _indexed;
+  Places? _indexedPlaces;
 
-  /// Built once per member list, not per keystroke.
+  /// Built once per member list, not per keystroke. On English the Bangla
+  /// names beside the English ones are searched too, once they have arrived.
   MemberSearch _searchFor(Bootstrap data) {
-    if (_searchIndex == null || !identical(_indexed, data)) {
+    if (_searchIndex == null ||
+        !identical(_indexed, data) ||
+        !identical(_indexedPlaces, _places)) {
       _searchIndex = MemberSearch(
         data.members,
         partyNames: {for (final p in data.parties) p.abbr: p.nameBn},
+        alt: _places?.alt ?? const {},
       );
       _indexed = data;
+      _indexedPlaces = _places;
     }
     return _searchIndex!;
   }
 
-  /// Party and district narrow the list; a typed query then ranks it, best
-  /// match first, in Bangla or English (see search.dart). With no query the
-  /// list keeps seat order.
+  bool _keep(MemberBrief m) =>
+      (_party == null || m.party == _party) &&
+      (_district == null || m.districtBn == _district) &&
+      (_kind == null || (_kind == 'reserved') == m.reserved);
+
+  /// The seats of the place the query names, under the same filters as the
+  /// list: a vacant seat only while no party is chosen.
+  List<SeatMatch> _placeHits() {
+    final places = _places;
+    if (places == null || _query.trim().isEmpty || _kind == 'reserved') {
+      return const [];
+    }
+    final hits = <SeatMatch>[];
+    for (final h in findPlaces(_query, places.finderSeats, places.upazilaEn)) {
+      final m = h.seat.member;
+      if (m != null ? _keep(m) : _party == null && _district == null) {
+        hits.add(h);
+      }
+    }
+    return hits;
+  }
+
+  /// Party, district and kind of seat narrow the list; a typed query then
+  /// ranks it, best match first, in Bangla or English (see search.dart). With
+  /// no query the list keeps seat order.
   List<MemberBrief> _filter(Bootstrap data) {
-    bool keep(MemberBrief m) =>
-        (_party == null || m.party == _party) &&
-        (_district == null || m.districtBn == _district);
+    bool keep(MemberBrief m) => _keep(m);
     if (_query.trim().isEmpty) {
       return data.members.where(keep).toList()
         ..sort((a, b) => (a.seatNo ?? 9999).compareTo(b.seatNo ?? 9999));
@@ -166,9 +221,20 @@ class _MembersScreenState extends State<MembersScreen>
         onRetry: _refresh,
         wrap: (child) => SafeArea(child: child),
         builder: (context, data) {
-          final shown = _filter(data);
+          final hits = _placeHits();
+          // A member found by their place is shown once, at the top.
+          final placed = {
+            for (final h in hits)
+              if (h.seat.member != null) h.seat.member!.id,
+          };
+          final shown = _filter(
+            data,
+          ).where((m) => !placed.contains(m.id)).toList();
           final filtered =
-              _party != null || _district != null || _query.isNotEmpty;
+              _party != null ||
+              _district != null ||
+              _kind != null ||
+              _query.isNotEmpty;
 
           return RefreshIndicator(
             color: AppColors.brand,
@@ -184,9 +250,32 @@ class _MembersScreenState extends State<MembersScreen>
                   const SliverToBoxAdapter(child: ElectionCard()),
                 ],
                 SliverToBoxAdapter(
-                  child: _filters(data, shown.length, filtered),
+                  child: _filters(data, shown.length + placed.length, filtered),
                 ),
-                if (shown.isEmpty)
+                if (hits.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: _GroupLabel(
+                      t('আপনার এলাকার এমপি', 'The MP for your area'),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSizes.pagePad,
+                    ),
+                    sliver: SliverList.separated(
+                      itemCount: hits.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) => _PlaceTile(match: hits[i]),
+                    ),
+                  ),
+                  if (shown.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: _GroupLabel(t('আরও ফল', 'More results')),
+                    ),
+                ],
+                if (shown.isEmpty && hits.isNotEmpty)
+                  const SliverToBoxAdapter(child: _Footnote())
+                else if (shown.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
                     child: EmptyState(
@@ -284,6 +373,16 @@ class _MembersScreenState extends State<MembersScreen>
         children: [
           ChipBar(
             options: [
+              (label: t('সব', 'All'), value: null),
+              (label: t('আসনভিত্তিক', 'Elected seats'), value: 'territorial'),
+              (label: t('সংরক্ষিত', 'Reserved seats'), value: 'reserved'),
+            ],
+            selected: _kind,
+            onSelect: (v) => setState(() => _kind = v),
+          ),
+          const SizedBox(height: 10),
+          ChipBar(
+            options: [
               (label: t('সব দল', 'All parties'), value: null),
               ...data.parties.map(
                 (p) => (label: '${p.shortBn} ${t.n(p.seats)}', value: p.abbr),
@@ -298,15 +397,22 @@ class _MembersScreenState extends State<MembersScreen>
             padding: const EdgeInsets.symmetric(horizontal: AppSizes.pagePad),
             child: Row(
               children: [
-                _DistrictButton(
-                  label: _district ?? t('সব জেলা', 'All districts'),
-                  active: _district != null,
-                  onTap: () => _pickDistrict(data.districts),
-                  onClear: _district == null
-                      ? null
-                      : () => setState(() => _district = null),
+                // On a small phone with a large font the button gives way to
+                // the count and "Clear all".
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: _DistrictButton(
+                      label: _district ?? t('সব জেলা', 'All districts'),
+                      active: _district != null,
+                      onTap: () => _pickDistrict(data.districts),
+                      onClear: _district == null
+                          ? null
+                          : () => setState(() => _district = null),
+                    ),
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 Text(
                   t.count(shownCount, ' জন', 'MP', 'MPs'),
                   style: const TextStyle(
@@ -381,13 +487,17 @@ class _DistrictButton extends StatelessWidget {
                 color: active ? AppColors.brand : AppColors.muted,
               ),
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontFamily: 'NotoSansBengali',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: active ? AppColors.brand : AppColors.inkSoft,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'NotoSansBengali',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: active ? AppColors.brand : AppColors.inkSoft,
+                  ),
                 ),
               ),
               if (onClear != null)
@@ -584,6 +694,164 @@ class _Footnote extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small heading over a group of results, as the website's search box has
+/// them: "আপনার এলাকার এমপি", then "আরও ফল".
+class _GroupLabel extends StatelessWidget {
+  final String text;
+  const _GroupLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSizes.pagePad + 2,
+        8,
+        AppSizes.pagePad,
+        8,
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontFamily: 'NotoSansBengali',
+          fontSize: 12.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
+          color: AppColors.brand,
+        ),
+      ),
+    );
+  }
+}
+
+/// A seat found by the place a reader typed: its member (or that it is
+/// vacant), the seat and party, what kind of place matched, and a note when
+/// the seat holds only part of it.
+class _PlaceTile extends StatelessWidget {
+  final SeatMatch match;
+  const _PlaceTile({required this.match});
+
+  static String _kindLabel(MatchKind k) => switch (k) {
+    MatchKind.seat => t('আসন', 'Seat'),
+    MatchKind.district => t('জেলা', 'District'),
+    MatchKind.upazila => t('উপজেলা', 'Upazila'),
+    MatchKind.union => t('ইউনিয়ন', 'Union'),
+    MatchKind.ward => t('সিটি ওয়ার্ড', 'City ward'),
+    MatchKind.place => t('এলাকা', 'Area'),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final seat = match.seat;
+    final m = seat.member;
+    final ward = match.kind == MatchKind.ward;
+    final partial = match.partial
+        ? t(
+            '${ward ? 'সিটির' : 'উপজেলার'} একাংশ এই আসনে',
+            'Part of the ${ward ? 'city' : 'upazila'} is in this seat',
+          )
+        : null;
+    final title =
+        m?.nameBn ??
+        t(
+          '${seat.seatLabel}: আসনটি এখন শূন্য',
+          '${seat.seatLabel}: the seat is now vacant',
+        );
+    final sub = [
+      if (m != null || !t.en) seat.seatLabel,
+      ?m?.partyBn,
+      ?partial,
+    ].join(' · ');
+    final colour = AppColors.party(m?.party == 'BJEI' ? 'Jamaat' : m?.party);
+
+    return Container(
+      decoration: AppDecor.card(),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppSizes.radiusCard),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => m != null
+                  ? MemberScreen(member: m)
+                  : SeatScreen(slug: seat.slug),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+            child: Row(
+              children: [
+                if (m != null)
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: colour.withValues(alpha: 0.55),
+                        width: 2,
+                      ),
+                    ),
+                    child: MemberAvatar(member: m, size: 46),
+                  )
+                else
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: const BoxDecoration(
+                      color: AppColors.warnSoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.event_seat_outlined,
+                      color: AppColors.warn,
+                    ),
+                  ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontFamily: 'NotoSansBengali',
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.ink,
+                          height: 1.35,
+                        ),
+                      ),
+                      if (sub.isNotEmpty)
+                        Text(
+                          sub,
+                          style: const TextStyle(
+                            fontFamily: 'NotoSansBengali',
+                            fontSize: 13,
+                            color: AppColors.muted,
+                            height: 1.4,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _kindLabel(match.kind),
+                  style: const TextStyle(
+                    fontFamily: 'NotoSansBengali',
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
