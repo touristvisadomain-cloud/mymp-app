@@ -2,25 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../bn.dart';
+import '../data/election.dart';
 import '../i18n.dart';
 import '../loading.dart';
-import '../models.dart';
+import '../maps/election_map.dart';
+import '../party_logo.dart';
 import '../theme.dart';
-import '../widgets.dart';
-import 'member_screen.dart';
+import 'election_parts.dart';
 
-int _n(dynamic v) => v is num ? v.toInt() : 0;
-List<Map<String, dynamic>> _list(dynamic v) =>
-    v is List ? v.whereType<Map<String, dynamic>>().toList() : const [];
-
-/// A string field, or null when the server sent anything else: one odd value
-/// must not turn the whole screen into an error.
-String? _str(dynamic v) => v is String ? v : null;
-Map<String, dynamic> _map(dynamic v) =>
-    v is Map<String, dynamic> ? v : const {};
-
-/// ত্রয়োদশ জাতীয় সংসদ নির্বাচন in figures: the House by party, the voters,
-/// the votes, the closest and widest wins, and who the members are.
+/// ত্রয়োদশ জাতীয় সংসদ নির্বাচন: the website's নির্বাচন page (/nirbachon), in
+/// its order: the map of who won where, the results, the voters and the
+/// dates, the parties' seats at earlier elections, and every seat by
+/// district. The figures about the members are on [StatisticsScreen]'s page.
 class ElectionScreen extends StatefulWidget {
   const ElectionScreen({super.key});
 
@@ -30,700 +23,329 @@ class ElectionScreen extends StatefulWidget {
 
 class _ElectionScreenState extends State<ElectionScreen>
     with RefetchOnLang<ElectionScreen> {
-  late Future<Map<String, dynamic>> _future = Api.instance.election();
+  late Future<ElectionData> _future = fetchElection();
+
+  /// Set while a finger moves the zoomed map, so the page stays still.
+  final _hold = ValueNotifier(false);
+
+  final _mapKey = GlobalKey();
+  final _resultsKey = GlobalKey();
+  final _votersKey = GlobalKey();
+  final _earlierKey = GlobalKey();
+  final _districtsKey = GlobalKey();
 
   @override
   void onLangChanged() => setState(() {
-    _future = Api.instance.election();
+    _future = fetchElection();
   });
 
+  @override
+  void dispose() {
+    _hold.dispose();
+    super.dispose();
+  }
+
   Future<void> _refresh() async {
-    final f = Api.instance.election(force: true);
+    final f = fetchElection(force: true);
     setState(() {
       _future = f;
     });
     await settle(f);
   }
 
-  void _openMember(MemberBrief m) => Navigator.of(
-    context,
-  ).push(MaterialPageRoute(builder: (_) => MemberScreen(member: m)));
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(t('নির্বাচন পরিসংখ্যান', 'Election statistics')),
-      ),
-      body: Loaded<Map<String, dynamic>>(
+      appBar: AppBar(title: Text(t('নির্বাচন', 'Election'))),
+      body: Loaded<ElectionData>(
         future: _future,
         onRetry: () => setState(() {
-          _future = Api.instance.election();
+          _future = fetchElection();
         }),
-        builder: (context, e) => RefreshIndicator(
-          color: AppColors.brand,
-          onRefresh: _refresh,
+        builder: (context, e) => ValueListenableBuilder<bool>(
+          valueListenable: _hold,
+          // The page is built once; holding it only swaps its physics.
           child: _body(e),
+          builder: (context, hold, child) => RefreshIndicator(
+            color: AppColors.brand,
+            onRefresh: _refresh,
+            notificationPredicate: (n) => !hold && n.depth == 0,
+            child: SingleChildScrollView(
+              physics: hold
+                  ? const NeverScrollableScrollPhysics()
+                  : const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                AppSizes.pagePad,
+                12,
+                AppSizes.pagePad,
+                32 + MediaQuery.paddingOf(context).bottom,
+              ),
+              child: child,
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _body(Map<String, dynamic> e) {
-    final dates = _map(e['dates']);
-    final house = _map(e['house']);
-    final voters = _map(e['voters']);
-    final results = _map(e['results']);
-    final people = _map(e['members']);
-    final text = Theme.of(context).textTheme;
-
-    final total = _n(house['total']);
-    final majority = _n(house['majority']);
-    final parties = _list(house['parties']);
-    final totalVotes = _n(results['totalVotes']);
-
-    return ListView(
-      padding: EdgeInsets.fromLTRB(
-        AppSizes.pagePad,
-        14,
-        AppSizes.pagePad,
-        32 + MediaQuery.paddingOf(context).bottom,
-      ),
+  Widget _body(ElectionData e) {
+    final h = e.house;
+    final published = e.publishedSeats;
+    final year = e.dates.election?.substring(0, 4) ?? '2026';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _Hero(
-          parliamentNo: _n(e['parliamentNo']),
-          electionDate: _str(dates['election']),
-          total: total,
-          seatsCounted: _n(results['seatsCounted']),
-        ),
-        const SizedBox(height: 12),
-        _Section(
-          title: t('গুরুত্বপূর্ণ তারিখ', 'Key dates'),
-          child: _Grid(
-            items: [
-              for (final (label, key) in [
-                (t('ভোটগ্রহণ', 'Polling day'), 'election'),
-                (t('গেজেট', 'Gazette'), 'gazette'),
-                (t('শপথ', 'Oath'), 'oath'),
-                (t('মেয়াদ শেষ', 'Term ends'), 'end'),
-              ])
-                (
-                  value: t.date(_str(dates[key])) ?? t('তারিখ নেই', 'No date'),
-                  label: label,
-                ),
-            ],
-            valueSize: 15,
+        PageHeading(
+          eyebrow: t.n(year),
+          title: t(
+            '${parliamentBn(e.parliamentNo)} জাতীয় সংসদ নির্বাচন',
+            'Election to the ${t.ord(e.parliamentNo)} Parliament',
+          ),
+          lede: t(
+            '${t.n(h.generalSeats)}টি আসনে নির্বাচন। বর্তমানে ${t.n(h.territorial)}টি আসনে সদস্য আছেন, সেই সঙ্গে ${t.n(h.reserved)}টি সংরক্ষিত নারী আসন মিলিয়ে সংসদে ${t.n(h.total)} জন।',
+            'An election to ${h.generalSeats} seats. ${h.territorial} ${plural(h.territorial, 'seat has', 'seats have')} a member at present; with the ${h.reserved} reserved seats for women, Parliament has ${h.total} ${plural(h.total, 'member', 'members')}.',
           ),
         ),
-        const SizedBox(height: 12),
-        _Section(
-          title: t('সংসদের গঠন', 'Make-up of Parliament'),
-          subtitle: t(
-            'সংরক্ষিত আসনসহ ${bn(total)} জন। কালো দাগ সংখ্যাগরিষ্ঠতার ${bn(majority)} আসন।',
-            '$total members, including the reserved seats. The black line marks a majority: $majority seats.',
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _StackBar(
-                parts: [
-                  for (final p in parties)
-                    (
-                      color: AppColors.party(_str(p['abbr'])),
-                      value: _n(p['seats']),
-                    ),
-                ],
-                total: total,
-                marker: total > 0 ? majority / total : null,
-              ),
-              const SizedBox(height: 14),
-              for (final p in parties)
-                _PartyRow(
-                  abbr: _str(p['abbr']),
-                  label: _str(p['labelBn']) ?? '',
-                  value: t.count(_n(p['seats']), ' আসন', 'seat', 'seats'),
-                  note: t(
-                    'সাধারণ আসনে ${bn(_n(p['seatsTerritorial']))}',
-                    '${_n(p['seatsTerritorial'])} in general seats',
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        _Section(
-          title: t('ভোটার ও ভোটকেন্দ্র', 'Voters and polling centres'),
-          subtitle: t('সারা দেশের হিসাব', 'Figures for the whole country'),
-          footer: _votersSource(voters),
-          child: Column(
-            children: [
-              _Grid(
-                items: [
-                  (
-                    value: t.group(_n(voters['registered'])),
-                    label: t('মোট ভোটার', 'Total voters'),
-                  ),
-                  (
-                    value: t.group(_n(voters['pollingCentres'])),
-                    label: t('ভোটকেন্দ্র', 'Polling centres'),
-                  ),
-                  (
-                    value: t.group(_n(voters['male'])),
-                    label: t('পুরুষ ভোটার', 'Male voters'),
-                  ),
-                  (
-                    value: t.group(_n(voters['female'])),
-                    label: t('নারী ভোটার', 'Female voters'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _StackBar(
-                parts: [
-                  (color: const Color(0xFF7FA99A), value: _n(voters['male'])),
-                  (color: AppColors.brand, value: _n(voters['female'])),
-                ],
-                total: _n(voters['registered']),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Text(
-                    '${t('পুরুষ', 'Male')} ${t.pct(_n(voters['male']), _n(voters['registered']))}',
-                    style: text.labelSmall,
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${t('নারী', 'Female')} ${t.pct(_n(voters['female']), _n(voters['registered']))}',
-                    style: text.labelSmall,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        if (totalVotes > 0) ...[
-          const SizedBox(height: 12),
-          _Section(
-            title: t('দলভিত্তিক ভোট', 'Votes by party'),
-            subtitle: t(
-              '${bn(_n(results['seatsCounted']))}টি আসনে প্রার্থীরা মোট ${bnGroup(totalVotes)} ভোট পেয়েছেন',
-              'Candidates won ${t.group(totalVotes)} votes in all across ${t.count(_n(results['seatsCounted']), '', 'seat', 'seats')}',
-            ),
-            footer: _str(results['sourceBn']),
-            child: Column(
-              children: [
-                for (final v in _list(results['voteShare']))
-                  _ShareRow(
-                    abbr: _str(v['abbr']),
-                    label: _str(v['labelBn']) ?? '',
-                    votes: _n(v['votes']),
-                    total: totalVotes,
-                  ),
-              ],
-            ),
-          ),
-        ],
-        if (_list(results['closest']).isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _Section(
-            title: t('সবচেয়ে কম ব্যবধানে জয়', 'Narrowest wins'),
-            child: _MarginList(
-              rows: _list(results['closest']),
-              onOpen: _openMember,
-            ),
-          ),
-        ],
-        if (_list(results['widest']).isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _Section(
-            title: t('সবচেয়ে বড় ব্যবধানে জয়', 'Widest wins'),
-            child: _MarginList(
-              rows: _list(results['widest']),
-              onOpen: _openMember,
-            ),
-          ),
-        ],
-        const SizedBox(height: 12),
-        _Section(
-          title: t('নির্বাচিত সদস্যরা', 'The members elected'),
-          subtitle: t(
-            'বর্তমান ${bn(total)} জন সংসদ সদস্যের তথ্য থেকে',
-            'From the records of the $total current MPs',
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _Grid(
-                items: [
-                  (
-                    value: _people(_n(people['women'])),
-                    label: t('নারী সদস্য', 'Women members'),
-                  ),
-                  (
-                    value: people['medianAge'] is num
-                        ? _years(_n(people['medianAge']))
-                        : t('তথ্য নেই', 'No data'),
-                    label: t('বয়সের মধ্যক', 'Median age'),
-                  ),
-                  (
-                    value: _people(_n(people['firstTime'])),
-                    label: t('প্রথমবার সংসদে', 'First time in Parliament'),
-                  ),
-                  (
-                    value: _people(_n(people['freedomFighters'])),
-                    label: t('মুক্তিযোদ্ধা', 'Freedom fighters'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                t(
-                  'নারী সদস্যদের ${bn(_n(people['womenTerritorial']))} জন সাধারণ আসনে নির্বাচিত, ${bn(_n(people['womenReserved']))} জন সংরক্ষিত আসনে।',
-                  'Of the women members, ${_n(people['womenTerritorial'])} were elected to general seats and ${_n(people['womenReserved'])} hold reserved seats.',
-                ),
-                style: text.labelSmall?.copyWith(height: 1.5),
-              ),
-              for (final (key, label) in [
-                ('youngest', t('সর্বকনিষ্ঠ', 'Youngest')),
-                ('oldest', t('সর্বজ্যেষ্ঠ', 'Oldest')),
-              ])
-                if (people[key] is Map<String, dynamic>)
-                  _PersonRow(
-                    label: label,
-                    member: MemberBrief.fromJson(
-                      _map(_map(people[key])['member']),
-                    ),
-                    trailing: _years(_n(_map(people[key])['age'])),
-                    onOpen: _openMember,
-                  ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        _Section(
-          title: t('বয়স', 'Age'),
-          child: _Bars(
-            rows: [
-              for (final b in _list(people['ageBands']))
-                (label: _str(b['label']) ?? '', count: _n(b['count'])),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        _Section(
-          title: t('সংসদে অভিজ্ঞতা', 'Experience in Parliament'),
-          subtitle: t(
-            '${bn(_n(people['firstTime']))} জন এবারই প্রথম, ${bn(_n(people['returning']))} জন আগেও সদস্য ছিলেন',
-            '${_n(people['firstTime'])} for the first time, ${_n(people['returning'])} were members before',
-          ),
-          child: _Bars(
-            rows: [
-              for (final b in _list(people['experience']))
-                (label: _str(b['label']) ?? '', count: _n(b['count'])),
-            ],
-            labelWidth: 118,
-          ),
-        ),
-        if (_list(people['professions']).isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _Section(
-            title: t('পেশা', 'Profession'),
-            subtitle: t(
-              'সংসদের তথ্যভান্ডারে লিপিবদ্ধ পেশা অনুযায়ী',
-              'By the profession recorded in Parliament’s database',
-            ),
-            child: _Bars(
-              rows: [
-                for (final b in _list(people['professions']))
-                  (label: _str(b['label']) ?? '', count: _n(b['count'])),
-              ],
-              labelWidth: 118,
-            ),
-          ),
-        ],
-        const SizedBox(height: 18),
-        Text(
-          t(
-            'সদস্যদের তথ্য জাতীয় সংসদের ওয়েবসাইট থেকে, ভোটার সংখ্যা নির্বাচন কমিশন থেকে। আমার এমপি একটি স্বাধীন, বেসরকারি তথ্যসেবা।',
-            'Members’ information is from Parliament’s website, voter numbers from the Election Commission. '
-                'My MP is an independent, non-governmental information service.',
-          ),
-          textAlign: TextAlign.center,
-          style: text.labelSmall?.copyWith(height: 1.5),
-        ),
-      ],
-    );
-  }
-}
-
-/// "সূত্র: নির্বাচন কমিশন, পড়া হয়েছে ১ জানুয়ারি ২০২৬" under the voter figures.
-String _votersSource(Map<String, dynamic> voters) {
-  final source =
-      _str(voters['sourceBn']) ?? t('নির্বাচন কমিশন', 'Election Commission');
-  final read = t.date(_str(voters['readOn']));
-  return t(
-    'সূত্র: $source${read != null ? ', পড়া হয়েছে $read' : ''}',
-    'Source: $source${read != null ? ', read on $read' : ''}',
-  );
-}
-
-/// "৪৫ জন" / "45": a number of people, as a figure in the grid.
-String _people(int n) => t('${bn(n)} জন', '$n');
-
-/// "৫৫ বছর" / "55 years".
-String _years(int n) => t('${bn(n)} বছর', '$n ${plural(n, 'year', 'years')}');
-
-class _Hero extends StatelessWidget {
-  final int parliamentNo;
-  final String? electionDate;
-  final int total;
-  final int seatsCounted;
-  const _Hero({
-    required this.parliamentNo,
-    required this.electionDate,
-    required this.total,
-    required this.seatsCounted,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const white = TextStyle(fontFamily: 'NotoSansBengali', color: Colors.white);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-      decoration: BoxDecoration(
-        gradient: AppDecor.headerGradient,
-        borderRadius: BorderRadius.circular(AppSizes.radiusCard),
-        boxShadow: AppDecor.shadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.how_to_vote_rounded,
-                color: Colors.white,
-                size: 22,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                t.date(electionDate) ?? t.n(2026),
-                style: white.copyWith(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white.withValues(alpha: 0.85),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            t(
-              '${parliamentBn(parliamentNo)} জাতীয় সংসদ নির্বাচন',
-              'Election to the ${t.ord(parliamentNo)} Parliament',
-            ),
-            style: white.copyWith(
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-              height: 1.3,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _heroStat(t.n(300), t('সাধারণ আসন', 'General seats')),
-              _heroStat(t.n(50), t('সংরক্ষিত আসন', 'Reserved seats')),
-              _heroStat(t.n(total), t('বর্তমান সদস্য', 'Current members')),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _heroStat(String value, String label) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontFamily: 'NotoSansBengali',
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-            height: 1.2,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'NotoSansBengali',
-            fontSize: 12,
-            color: Colors.white.withValues(alpha: 0.8),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _Section extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final String? footer;
-  final Widget child;
-  const _Section({
-    required this.title,
-    this.subtitle,
-    this.footer,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: AppDecor.card(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: text.titleMedium),
-          if (subtitle != null) ...[
-            const SizedBox(height: 2),
-            Text(subtitle!, style: text.labelSmall?.copyWith(height: 1.45)),
-          ],
-          const SizedBox(height: 14),
-          child,
-          if (footer != null) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1, color: AppColors.ruleSoft),
-            const SizedBox(height: 10),
-            Text(footer!, style: text.labelSmall?.copyWith(height: 1.5)),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Two columns of big figures.
-class _Grid extends StatelessWidget {
-  final List<({String value, String label})> items;
-  final double valueSize;
-  const _Grid({required this.items, this.valueSize = 19});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, box) {
-        final w = (box.maxWidth - 10) / 2;
-        return Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            for (final i in items)
-              Container(
-                width: w,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.paper,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      i.value,
-                      style: TextStyle(
-                        fontFamily: 'NotoSansBengali',
-                        fontSize: valueSize,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.ink,
-                        height: 1.3,
-                      ),
-                    ),
-                    Text(
-                      i.label,
-                      style: const TextStyle(
-                        fontFamily: 'NotoSansBengali',
-                        fontSize: 12.5,
-                        color: AppColors.muted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// One bar split by share, with an optional line at the majority mark.
-class _StackBar extends StatelessWidget {
-  final List<({Color color, int value})> parts;
-  final int total;
-  final double? marker;
-  const _StackBar({required this.parts, required this.total, this.marker});
-
-  @override
-  Widget build(BuildContext context) {
-    final rest = total - parts.fold<int>(0, (n, p) => n + p.value);
-    return LayoutBuilder(
-      builder: (context, box) => SizedBox(
-        height: 30,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              top: 4,
-              bottom: 4,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Row(
-                  children: [
-                    for (final p in parts)
-                      if (p.value > 0)
-                        Expanded(
-                          flex: p.value,
-                          child: Container(
-                            color: p.color,
-                            margin: const EdgeInsets.only(right: 1),
-                          ),
-                        ),
-                    if (rest > 0)
-                      Expanded(
-                        flex: rest,
-                        child: Container(color: AppColors.sunk),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            if (marker != null)
-              Positioned(
-                left: (box.maxWidth * marker!).clamp(0, box.maxWidth - 2),
-                top: 0,
-                bottom: 0,
-                child: Container(width: 2, color: AppColors.ink),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PartyRow extends StatelessWidget {
-  final String? abbr;
-  final String label;
-  final String value;
-  final String? note;
-  const _PartyRow({
-    required this.abbr,
-    required this.label,
-    required this.value,
-    this.note,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                PartyChip(abbr: abbr, label: label),
-                if (note != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 14),
-                    child: Text(note!, style: text.labelSmall),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            value,
-            style: const TextStyle(
-              fontFamily: 'NotoSansBengali',
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.ink,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ShareRow extends StatelessWidget {
-  final String? abbr;
-  final String label;
-  final int votes;
-  final int total;
-  const _ShareRow({
-    required this.abbr,
-    required this.label,
-    required this.votes,
-    required this.total,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colour = AppColors.party(abbr == 'other' ? null : abbr);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        const SizedBox(height: 14),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: PartyChip(
-                  abbr: abbr == 'other' ? null : abbr,
-                  label: label,
+                child: StatTile(
+                  label: t('আসন', 'Seats'),
+                  value: t.n(h.generalSeats),
                 ),
               ),
-              Text(
-                t.pct(votes, total),
-                style: const TextStyle(
-                  fontFamily: 'NotoSansBengali',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.ink,
+              const SizedBox(width: 10),
+              Expanded(
+                child: StatTile(
+                  label: t('পূর্ণ', 'Filled'),
+                  value: t.n(h.territorial),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: StatTile(
+                  label: t('দল', 'Parties'),
+                  value: t.n(h.parties.length),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 5),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: total > 0 ? votes / total : 0,
-              minHeight: 8,
-              color: colour,
-              backgroundColor: AppColors.sunk,
+        ),
+        const SizedBox(height: 14),
+        SectionShortcuts(
+          sections: [
+            (_mapKey, t('মানচিত্র', 'Map')),
+            (_resultsKey, t('ফলাফল', 'Results')),
+            (_votersKey, t('ভোটার ও তারিখ', 'Voters and dates')),
+            (_earlierKey, t('আগের নির্বাচন', 'Earlier elections')),
+            (_districtsKey, t('জেলা অনুযায়ী আসন', 'Seats by district')),
+          ],
+        ),
+
+        // The map.
+        const SizedBox(height: 22),
+        SectionHead(
+          key: _mapKey,
+          title: t('কোন জেলায় কে জিতল', 'Who won in each district'),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          t(
+            'দেশের মানচিত্রে ${t.n(h.generalSeats)}টি আসন, প্রত্যেকটি তার জায়গায় দলের প্রতীকে; প্রতীকে চাপ দিলে আসনের এলাকা আর সংসদ সদস্য। “জেলার রং”-এ প্রতিটি জেলা সেখানে বেশিরভাগ আসন যে দলের, সেই রঙে।',
+            'The ${h.generalSeats} seats on a map of the country, each in its place and marked with its party’s symbol; tap a symbol to see the seat’s area and its Member of Parliament. In “District colours”, each district is in the colour of the party that holds most of its seats.',
+          ),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.6),
+        ),
+        const SizedBox(height: 12),
+        ElectionMap(
+          seats: e.seats,
+          districtNames: e.districtNames,
+          partyName: fullPartyName,
+          holdPage: _hold,
+          onMember: (m) => openMember(context, m),
+          onSeatPage: ElectionLinks.seat == null
+              ? null
+              : (slug) => ElectionLinks.seat!(context, slug),
+          onDistrictPage: ElectionLinks.district == null
+              ? null
+              : (slug) => ElectionLinks.district!(context, slug),
+        ),
+
+        // Results.
+        const SizedBox(height: 28),
+        SectionHead(
+          key: _resultsKey,
+          title: t('ফলাফল', 'Results'),
+          note: published > 0
+              ? t(
+                  '${t.n(published)}টি আসনের ফল প্রকাশিত',
+                  'Results published for $published ${plural(published, 'seat', 'seats')}',
+                )
+              : t(
+                  'আসনভিত্তিক ফল এখনো যোগ হয়নি',
+                  'Seat-by-seat results not yet added',
+                ),
+        ),
+        const SizedBox(height: 12),
+        _Results(e: e, published: published),
+
+        // Voters and dates.
+        const SizedBox(height: 28),
+        SectionHead(
+          key: _votersKey,
+          title: t('ভোটার ও নির্বাচনের তারিখ', 'Voters and election dates'),
+          note: t(
+            'নির্বাচন কমিশন ও সংসদের তথ্য',
+            'Figures from the Election Commission and Parliament',
+          ),
+        ),
+        const SizedBox(height: 12),
+        _VotersCard(v: e.voters),
+        const SizedBox(height: 12),
+        _DatesCard(d: e.dates),
+
+        // Earlier elections.
+        const SizedBox(height: 28),
+        SectionHead(
+          key: _earlierKey,
+          title: t(
+            'আগের নির্বাচনগুলোতে দলগুলোর আসন',
+            'Seats by party in earlier elections',
+          ),
+          note: t('সংসদের তথ্যভান্ডার', 'Parliament’s database'),
+        ),
+        const SizedBox(height: 12),
+        _EarlierTable(rows: e.earlier, current: e.parliamentNo),
+        const SizedBox(height: 10),
+        Text(
+          t(
+            'সাধারণ (আসনভিত্তিক) আসনে সংসদের তথ্যভান্ডারে নথিভুক্ত সদস্য অনুযায়ী; সংরক্ষিত নারী আসন বাদ। উপনির্বাচন ও অসম্পূর্ণ রেকর্ডের কারণে কোনো কোনো সংসদে সংখ্যা সরকারি ফলের সঙ্গে সামান্য ভিন্ন হতে পারে; “নথিভুক্ত” কলামে সেটি দেখা যায়। ১ম থেকে ৩য় ও ৬ষ্ঠ সংসদের রেকর্ড সেখানে নেই।',
+            'By the members recorded in Parliament’s database for the general (constituency) seats; the reserved seats for women are left out. Because of by-elections and incomplete records, the numbers for some parliaments may differ slightly from the official results; the “Recorded” column shows this. The database has no records for the 1st to 3rd and the 6th parliaments.',
+          ),
+          style: mutedStyle.copyWith(fontSize: 12.5),
+        ),
+
+        // Seats by district.
+        const SizedBox(height: 28),
+        _Districts(key: _districtsKey, seats: e.seats),
+        const SizedBox(height: 14),
+        Text(
+          '${t('তথ্যসূত্র: বাংলাদেশ জাতীয় সংসদ | হালনাগাদ ', 'Source: Parliament of Bangladesh | Updated ')}'
+          '${t.date(e.version) ?? ''}',
+          style: mutedStyle,
+        ),
+      ],
+    );
+  }
+}
+
+/// A party's full name in the reader's language, from the member list the
+/// app keeps; null when it is not to hand (or is in the other language).
+String? fullPartyName(String abbr) {
+  final b = Api.instance.cached;
+  if (b == null) return null;
+  for (final p in b.parties) {
+    if (p.abbr != abbr) continue;
+    final name = p.nameBn;
+    if (t.en && RegExp('[ঀ-৿]').hasMatch(name)) return null;
+    return name;
+  }
+  return null;
+}
+
+class _Results extends StatelessWidget {
+  final ElectionData e;
+  final int published;
+  const _Results({required this.e, required this.published});
+
+  @override
+  Widget build(BuildContext context) {
+    final h = e.house;
+    final top = h.parties.take(4).toList();
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PanelTitle(
+            t('সংসদের গঠন', 'Make-up of Parliament'),
+            note: t(
+              'সংরক্ষিত আসনসহ মোট ${t.n(h.total)}টি আসন; নিচে শুধু নির্বাচনে জেতা আসন।',
+              '${h.total} seats in all, including the reserved seats; below, only the seats won at the election.',
             ),
           ),
-          const SizedBox(height: 3),
-          Text(
-            t.en
-                ? '${t.group(votes)} ${plural(votes, 'vote', 'votes')}'
-                : '${t.group(votes)} ভোট',
-            style: Theme.of(context).textTheme.labelSmall,
+          const SizedBox(height: 14),
+          CompositionBar(
+            parties: h.parties,
+            total: h.total,
+            majority: h.majority,
+            nameOf: (p) => fullPartyName(p.abbr) ?? p.label,
+          ),
+          const Divider(height: 20, color: AppColors.rule),
+          TileGrid(
+            gap: 8,
+            tiles: [
+              for (final p in top)
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: ElectionLinks.party == null
+                      ? null
+                      : () =>
+                            ElectionLinks.party!(context, p.abbr.toLowerCase()),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            PartyLogo(abbr: p.abbr, size: 18),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                p.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: mutedStyle,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: t.n(p.seatsTerritorial),
+                                style: figureStyle(17),
+                              ),
+                              TextSpan(
+                                text: t(
+                                  ' আসনে নির্বাচিত',
+                                  ' ${plural(p.seatsTerritorial, 'seat', 'seats')} won',
+                                ),
+                                style: mutedStyle,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          PanelFoot(
+            published > 0
+                ? t(
+                    'প্রতিটি আসনের পাতায় সব প্রার্থী, দল ও প্রাপ্ত ভোট আছে; নিচে জেলা অনুযায়ী তালিকায় বিজয়ীর ভোট দেখুন। সূত্র দ্য বিজনেস স্ট্যান্ডার্ড ও উইকিপিডিয়া, নির্বাচন কমিশনের গেজেটের সঙ্গে এখনো মিলিয়ে দেখা হয়নি। যেসব আসনের ফল পাওয়া যায়নি, সেগুলোর পাতায় তা লেখা আছে।',
+                    'Each seat’s page has every candidate, their party and the votes they received; the list by district below shows the winner’s votes. Sources: The Business Standard and Wikipedia; not yet checked against the Election Commission’s gazette. Seats whose results could not be found say so on their pages.',
+                  )
+                : t(
+                    'নির্বাচন কমিশনের গেজেট থেকে প্রতিটি আসনের প্রার্থী, প্রতীক ও প্রাপ্ত ভোট যোগ করা হবে। যাচাই করা সংখ্যা ছাড়া কিছু দেখানো হবে না।',
+                    'Each seat’s candidates, symbols and votes will be added from the Election Commission’s gazette. No figure will be shown unless it has been verified.',
+                  ),
           ),
         ],
       ),
@@ -731,155 +353,449 @@ class _ShareRow extends StatelessWidget {
   }
 }
 
-class _Bars extends StatelessWidget {
-  final List<({String label, int count})> rows;
-  final double labelWidth;
-  const _Bars({required this.rows, this.labelWidth = 78});
+class _VotersCard extends StatelessWidget {
+  final Voters v;
+  const _VotersCard({required this.v});
 
   @override
   Widget build(BuildContext context) {
-    final max = rows.fold<int>(1, (m, r) => r.count > m ? r.count : m);
-    return Column(
+    final figures = [
+      (t('মোট ভোটার', 'Total voters'), t.group(v.registered)),
+      (t('ভোটকেন্দ্র', 'Polling centres'), t.group(v.pollingCentres)),
+      (
+        t('নিবন্ধিত রাজনৈতিক দল', 'Registered political parties'),
+        t.n(v.registeredParties),
+      ),
+      (
+        t('ভোটারের মধ্যে নারী', 'Women among voters'),
+        '${t.fixed(v.womenPct)}%',
+      ),
+    ];
+    Widget figure((String, String) f) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final r in rows)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 9),
-            child: Row(
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: AlignmentDirectional.centerStart,
+          child: Text(f.$2, style: figureStyle(24)),
+        ),
+        Text(f.$1, style: mutedStyle),
+      ],
+    );
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Crore-sized figures in Bangla grouping are wide: one column on a
+          // narrow phone, so two never run together.
+          LayoutBuilder(
+            builder: (context, box) {
+              if (box.maxWidth < 300) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final f in figures)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: figure(f),
+                      ),
+                  ],
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: TileGrid(
+                  gap: 14,
+                  tiles: [for (final f in figures) figure(f)],
+                ),
+              );
+            },
+          ),
+          SplitBar(
+            shares: false,
+            semantics: t(
+              'পুরুষ ভোটার ${t.group(v.male)}, নারী ভোটার ${t.group(v.female)}',
+              'Male voters ${t.group(v.male)}, female voters ${t.group(v.female)}',
+            ),
+            a: (label: t('পুরুষ', 'Men'), n: v.male, colour: menColour),
+            b: (
+              label: t('নারী', 'Women'),
+              n: v.female,
+              colour: AppColors.brand,
+            ),
+          ),
+          PanelFoot(
+            '${t('তথ্যসূত্র: ', 'Source: ')}${v.source ?? t('বাংলাদেশ নির্বাচন কমিশন', 'Bangladesh Election Commission')}'
+            '${v.readOn != null ? '${t(' | পড়া হয়েছে ', ' | Read on ')}${t.date(v.readOn)}' : ''}',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The election's dates as a timeline.
+class _DatesCard extends StatelessWidget {
+  final ElectionDates d;
+  const _DatesCard({required this.d});
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = [
+      (t('নির্বাচন', 'Election'), d.election),
+      (t('গেজেট', 'Gazette'), d.gazette),
+      (t('শপথ', 'Oath'), d.oath),
+      (t('মেয়াদ শেষ', 'Term ends'), d.end),
+    ];
+    return Panel(
+      child: Column(
+        children: [
+          for (final (i, (label, value)) in rows.indexed)
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    width: 22,
+                    child: Stack(
+                      children: [
+                        if (i < rows.length - 1)
+                          const Positioned(
+                            left: 5,
+                            top: 18,
+                            bottom: 0,
+                            child: SizedBox(
+                              width: 2,
+                              child: ColoredBox(color: AppColors.brandSoft),
+                            ),
+                          ),
+                        Positioned(
+                          left: 0,
+                          top: 6,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: i < rows.length - 1
+                                  ? AppColors.brand
+                                  : AppColors.surface,
+                              border: Border.all(
+                                color: AppColors.brand,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        bottom: i < rows.length - 1 ? 16 : 0,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            label,
+                            style: mutedStyle.copyWith(fontSize: 12.5),
+                          ),
+                          Text(
+                            t.date(value) ?? t('তারিখ নেই', 'No date'),
+                            style: const TextStyle(
+                              fontFamily: 'NotoSansBengali',
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.ink,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Seats by party in each parliament on record: the five parties with most
+/// seats over them all, the rest together, and the members recorded.
+class _EarlierTable extends StatelessWidget {
+  final List<EarlierParliament> rows;
+  final int current;
+  const _EarlierTable({required this.rows, required this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    final totals = <String, int>{};
+    for (final p in rows) {
+      for (final ps in p.parties) {
+        totals[ps.abbr] = (totals[ps.abbr] ?? 0) + ps.seats;
+      }
+    }
+    final cols =
+        (totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value)))
+            .take(5)
+            .map((e) => e.key)
+            .toList();
+    const head = TextStyle(
+      fontFamily: 'NotoSansBengali',
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      color: AppColors.muted,
+      height: 1.3,
+    );
+    const cell = TextStyle(
+      fontFamily: 'NotoSansBengali',
+      fontSize: 13.5,
+      color: AppColors.ink,
+      height: 1.3,
+    );
+    Widget num(int n, {bool muted = false}) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+      child: Text(
+        t.n(n),
+        textAlign: TextAlign.end,
+        style: cell.copyWith(
+          color: muted || n == 0 ? AppColors.muted : AppColors.ink,
+        ),
+      ),
+    );
+    return Container(
+      decoration: AppDecor.card(),
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Table(
+          defaultColumnWidth: const IntrinsicColumnWidth(),
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          children: [
+            TableRow(
+              decoration: BoxDecoration(
+                color: AppColors.sunk.withValues(alpha: 0.7),
+              ),
               children: [
-                SizedBox(
-                  width: labelWidth,
-                  child: Text(
-                    r.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'NotoSansBengali',
-                      fontSize: 13,
-                      color: AppColors.inkSoft,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+                  child: Text(t('সংসদ', 'Parliament'), style: head),
+                ),
+                for (final c in cols)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 9,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Dot(partyColour(c)),
+                        const SizedBox(width: 5),
+                        Text(c, style: head),
+                      ],
                     ),
                   ),
-                ),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: r.count / max,
-                      minHeight: 12,
-                      color: AppColors.brand,
-                      backgroundColor: AppColors.sunk,
-                    ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 9,
                   ),
-                ),
-                SizedBox(
-                  width: 40,
                   child: Text(
-                    bn(r.count),
+                    t('অন্য', 'Other'),
                     textAlign: TextAlign.end,
-                    style: const TextStyle(
-                      fontFamily: 'NotoSansBengali',
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.ink,
-                    ),
+                    style: head,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 9, 14, 9),
+                  child: Text(
+                    t('নথিভুক্ত', 'Recorded'),
+                    textAlign: TextAlign.end,
+                    style: head,
                   ),
                 ),
               ],
             ),
-          ),
-      ],
-    );
-  }
-}
-
-class _MarginList extends StatelessWidget {
-  final List<Map<String, dynamic>> rows;
-  final void Function(MemberBrief) onOpen;
-  const _MarginList({required this.rows, required this.onOpen});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (final r in rows)
-          if (r['member'] is Map<String, dynamic>)
-            _PersonRow(
-              label: _str(r['seatBn']) ?? '',
-              member: MemberBrief.fromJson(_map(r['member'])),
-              trailing: t(
-                '${t.group(_n(r['margin']))} ভোটে',
-                'by ${t.group(_n(r['margin']))}',
-              ),
-              note: r['runnerUpParty'] != null
-                  ? '${t('নিকটতম: ', 'Runner-up: ')}${r['runnerUpParty']}'
-                  : null,
-              onOpen: onOpen,
-            ),
-      ],
-    );
-  }
-}
-
-class _PersonRow extends StatelessWidget {
-  final String label;
-  final MemberBrief member;
-  final String trailing;
-  final String? note;
-  final void Function(MemberBrief) onOpen;
-  const _PersonRow({
-    required this.label,
-    required this.member,
-    required this.trailing,
-    this.note,
-    required this.onOpen,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return InkWell(
-      onTap: () => onOpen(member),
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            MemberAvatar(member: member, size: 40),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            for (final p in rows)
+              TableRow(
+                decoration: BoxDecoration(
+                  color: p.no == current
+                      ? AppColors.brandSoft.withValues(alpha: 0.6)
+                      : null,
+                  border: const Border(
+                    top: BorderSide(color: AppColors.ruleSoft),
+                  ),
+                ),
                 children: [
-                  Text(label, style: text.labelSmall),
-                  Text(
-                    member.nameBn,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'NotoSansBengali',
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.ink,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+                    child: Text(
+                      p.label,
+                      style: cell.copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
-                  if (note != null) Text(note!, style: text.labelSmall),
+                  for (final c in cols) num(p.seatsOf(c)),
+                  num(
+                    p.parties
+                        .where((x) => !cols.contains(x.abbr))
+                        .fold(0, (n, x) => n + x.seats),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: num(p.total, muted: true),
+                  ),
                 ],
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Every general seat, district by district: its member, party and the
+/// winner's votes.
+class _Districts extends StatelessWidget {
+  final List<ElectionSeat> seats;
+  const _Districts({super.key, required this.seats});
+
+  @override
+  Widget build(BuildContext context) {
+    final by = <String, List<ElectionSeat>>{};
+    final names = <String, String>{};
+    for (final s in seats) {
+      if (s.districtSlug.isEmpty) continue;
+      by.putIfAbsent(s.districtSlug, () => []).add(s);
+      names[s.districtSlug] = s.districtName;
+    }
+    final order = by.keys.toList()
+      ..sort(
+        (a, b) => names[a]!.toLowerCase().compareTo(names[b]!.toLowerCase()),
+      );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHead(
+          title: t('জেলা অনুযায়ী আসন', 'Seats by district'),
+          note: t.count(order.length, ' জেলা', 'district', 'districts'),
+        ),
+        const SizedBox(height: 12),
+        for (final slug in order) ...[
+          _DistrictPanel(name: names[slug]!, seats: by[slug]!),
+          const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+}
+
+class _DistrictPanel extends StatelessWidget {
+  final String name;
+  final List<ElectionSeat> seats;
+  const _DistrictPanel({required this.name, required this.seats});
+
+  @override
+  Widget build(BuildContext context) {
+    return Panel(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Expanded(
+                child: Text(
+                  name,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              Text(
+                t.count(seats.length, ' আসন', 'seat', 'seats'),
+                style: mutedStyle,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          for (final s in seats) _SeatRow(seat: s),
+        ],
+      ),
+    );
+  }
+}
+
+class _SeatRow extends StatelessWidget {
+  final ElectionSeat seat;
+  const _SeatRow({required this.seat});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = seat.member;
+    final open = ElectionLinks.seat != null
+        ? () => ElectionLinks.seat!(context, seat.slug)
+        : m != null
+        ? () => openMember(context, m)
+        : null;
+    return InkWell(
+      onTap: open,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: m == null
+                  ? const Center(child: Dot(AppColors.rule))
+                  : PartyLogo(abbr: seat.party, size: 18),
             ),
             const SizedBox(width: 8),
-            Text(
-              trailing,
-              style: const TextStyle(
-                fontFamily: 'NotoSansBengali',
-                fontSize: 13.5,
-                fontWeight: FontWeight.w800,
-                color: AppColors.brand,
+            // The seat and its member on one line where they fit; on a narrow
+            // phone the member's name gives way first.
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: seat.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                    if (m != null) TextSpan(text: '  ${m.nameBn}'),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'NotoSansBengali',
+                  fontSize: 13.5,
+                  color: AppColors.muted,
+                  height: 1.35,
+                ),
               ),
             ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              size: 20,
-              color: AppColors.muted,
-            ),
+            if (seat.votes != null) ...[
+              const SizedBox(width: 6),
+              Text(
+                '${t.group(seat.votes!)}${t(' ভোট', ' votes')}',
+                style: const TextStyle(
+                  fontFamily: 'NotoSansBengali',
+                  fontSize: 12,
+                  color: AppColors.muted,
+                ),
+              ),
+            ],
           ],
         ),
       ),
