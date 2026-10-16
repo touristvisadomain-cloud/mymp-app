@@ -5,40 +5,75 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'i18n.dart';
 import 'models.dart';
 
 /// Everything the app knows comes from here, and it is all public: no account,
 /// no key, nothing sent up. The only thing stored on the phone is a copy of
 /// what was fetched, so the app opens with content on a train with no signal.
 class Api {
-  Api._();
+  Api._() {
+    appLang.addListener(_languageChanged);
+  }
   static final Api instance = Api._();
 
-  static const base = 'https://mymp.bd';
+  /// The site, overridable for testing against a local copy:
+  ///   flutter run --dart-define=MYMP_BASE=http://localhost:3000
+  static const base = String.fromEnvironment(
+    'MYMP_BASE',
+    defaultValue: 'https://mymp.bd',
+  );
+
+  /// A page of the website in the reader's language: "/mp/x" in Bangla,
+  /// "/en/mp/x" in English. For "ওয়েবসাইটে দেখুন" and shared links.
+  static String page(String path) {
+    final p = t.href(path);
+    return p == '/' ? base : '$base$p';
+  }
+
   static const _userAgent = 'mymp-app/1.0 (Android; +https://mymp.bd)';
 
+  // Everything held is tagged with the language it was fetched in, so nothing
+  // depends on which listener hears of a switch first.
   Bootstrap? _bootstrap;
+  Lang? _bootstrapLang;
+  Bootstrap? get _held => _bootstrapLang == appLang.value ? _bootstrap : null;
 
   /// The member list as it stands, for screens that redraw when it changes:
   /// a quiet refresh, a pull, or a first fetch that succeeds after a failure.
   final bootstrap = ValueNotifier<Bootstrap?>(null);
 
   // Renamed when the list gains a field: a copy saved by an older version
-  // lacks it and would stand until the site's data next changed.
-  static const _bootstrapKey = 'bootstrap_v3';
-  Bootstrap? get cached => _bootstrap;
+  // lacks it and would stand until the site's data next changed. One copy
+  // per language: the English list is the same JSON with English text.
+  static String _bootstrapKey(Lang lang) =>
+      lang == Lang.en ? 'bootstrap_v4_en' : 'bootstrap_v4';
 
+  /// The list in hand: the current language's once it has arrived, the other
+  /// language's until then.
+  Bootstrap? get cached => _held ?? bootstrap.value;
+
+  /// Keyed "bn/slug", "en/slug".
   final _memberCache = <String, MemberDetail>{};
+
+  /// After a switch the list is fetched in the new language (from the phone
+  /// when it was saved before); the screens refetch their own data.
+  void _languageChanged() => loadBootstrap().ignore();
 
   Future<Map<String, dynamic>> _getJson(
     String path, {
     Duration timeout = const Duration(seconds: 20),
   }) async {
+    // Every route answers in English when asked; without `lang` it answers in
+    // Bangla, as it always has.
+    final url = t.en
+        ? '$base$path${path.contains('?') ? '&' : '?'}lang=en'
+        : '$base$path';
     final http.Response res;
     try {
       res = await http
           .get(
-            Uri.parse('$base$path'),
+            Uri.parse(url),
             headers: const {
               'accept': 'application/json',
               'user-agent': _userAgent,
@@ -47,27 +82,46 @@ class Api {
           .timeout(timeout);
     } on TimeoutException {
       throw ApiException(
-        'সংযোগ খুব ধীর, সময়মতো উত্তর আসেনি। একটু পরে আবার চেষ্টা করুন।',
+        t(
+          'সংযোগ খুব ধীর, সময়মতো উত্তর আসেনি। একটু পরে আবার চেষ্টা করুন।',
+          'The connection is too slow; no answer came in time. Please try again in a little while.',
+        ),
       );
     } catch (_) {
       // No signal, no data plan, or the site unreachable: the reader cannot
-      // act on a socket error's English text, only on what it means.
+      // act on a socket error's text, only on what it means.
       throw ApiException(
-        'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না। সংযোগ দেখে আবার চেষ্টা করুন।',
+        t(
+          'ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না। সংযোগ দেখে আবার চেষ্টা করুন।',
+          'There is no internet connection. Check your connection and try again.',
+        ),
       );
     }
     if (res.statusCode == 404) {
-      throw ApiException('এই তথ্যটি এখন আর পাওয়া যাচ্ছে না।');
+      throw ApiException(
+        t(
+          'এই তথ্যটি এখন আর পাওয়া যাচ্ছে না।',
+          'This information is no longer available.',
+        ),
+      );
     }
     if (res.statusCode != 200) {
       throw ApiException(
-        'সার্ভার এই মুহূর্তে সাড়া দিচ্ছে না। একটু পরে আবার চেষ্টা করুন।',
+        t(
+          'সার্ভার এই মুহূর্তে সাড়া দিচ্ছে না। একটু পরে আবার চেষ্টা করুন।',
+          'The server is not responding right now. Please try again in a little while.',
+        ),
       );
     }
     try {
       return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     } catch (_) {
-      throw ApiException('তথ্য পড়া গেল না। একটু পরে আবার চেষ্টা করুন।');
+      throw ApiException(
+        t(
+          'তথ্য পড়া গেল না। একটু পরে আবার চেষ্টা করুন।',
+          'The information could not be read. Please try again in a little while.',
+        ),
+      );
     }
   }
 
@@ -77,56 +131,77 @@ class Api {
   /// quietly once the fetch returns; a slow connection then costs the reader
   /// nothing. [force] skips the stored copy, for pull-to-refresh.
   Future<Bootstrap> loadBootstrap({bool force = false}) {
-    if (_bootstrap != null && !force) return Future.value(_bootstrap!);
+    final held = _held;
+    if (held != null && !force) return Future.value(held);
     // Several tabs ask at launch; they share the one request.
-    if (!force && _loading != null) return _loading!;
+    if (!force && _loading != null && _loadingLang == appLang.value) {
+      return _loading!;
+    }
     final loading = _loadBootstrap(force);
     if (!force) {
       _loading = loading;
-      loading.whenComplete(() => _loading = null).ignore();
+      _loadingLang = appLang.value;
+      loading.whenComplete(() {
+        if (identical(_loading, loading)) _loading = null;
+      }).ignore();
     }
     return loading;
   }
 
   Future<Bootstrap>? _loading;
+  Lang? _loadingLang;
 
   Future<Bootstrap> _loadBootstrap(bool force) async {
+    // The language this load is for. A reader who switches while it is in
+    // flight gets the new language's load; this one must not overwrite it.
+    final lang = appLang.value;
+    final key = _bootstrapKey(lang);
     final prefs = await SharedPreferences.getInstance();
     // Copies saved under older keys are never read again.
-    for (final old in const ['bootstrap', 'bootstrap_v2']) {
+    for (final old in const ['bootstrap', 'bootstrap_v2', 'bootstrap_v3']) {
       if (prefs.containsKey(old)) unawaited(prefs.remove(old));
     }
     if (!force) {
-      final saved = prefs.getString(_bootstrapKey);
+      final saved = prefs.getString(key);
       if (saved != null) {
         try {
-          _bootstrap = Bootstrap.fromJson(
+          final stored = Bootstrap.fromJson(
             jsonDecode(saved) as Map<String, dynamic>,
           );
-          bootstrap.value = _bootstrap;
-          unawaited(_refreshBootstrap(prefs));
-          return _bootstrap!;
+          if (lang == appLang.value) {
+            _bootstrap = stored;
+            _bootstrapLang = lang;
+            bootstrap.value = stored;
+            unawaited(_refreshBootstrap(prefs, lang));
+          }
+          return stored;
         } catch (_) {
-          await prefs.remove(_bootstrapKey);
+          await prefs.remove(key);
         }
       }
     }
 
     final json = await _getJson('/api/app/v1/bootstrap');
-    await prefs.setString(_bootstrapKey, jsonEncode(json));
-    _bootstrap = Bootstrap.fromJson(json);
-    bootstrap.value = _bootstrap;
-    return _bootstrap!;
+    await prefs.setString(key, jsonEncode(json));
+    final fresh = Bootstrap.fromJson(json);
+    if (lang == appLang.value) {
+      _bootstrap = fresh;
+      _bootstrapLang = lang;
+      bootstrap.value = fresh;
+    }
+    return fresh;
   }
 
   /// Fetched behind a shown-from-storage list; a failure here changes nothing.
-  Future<void> _refreshBootstrap(SharedPreferences prefs) async {
+  Future<void> _refreshBootstrap(SharedPreferences prefs, Lang lang) async {
     try {
       final json = await _getJson('/api/app/v1/bootstrap');
       final fresh = Bootstrap.fromJson(json);
-      if (fresh.version != _bootstrap?.version && fresh.members.isNotEmpty) {
-        await prefs.setString(_bootstrapKey, jsonEncode(json));
+      if (lang != appLang.value) return;
+      if (fresh.version != _held?.version && fresh.members.isNotEmpty) {
+        await prefs.setString(_bootstrapKey(lang), jsonEncode(json));
         _bootstrap = fresh;
+        _bootstrapLang = lang;
         bootstrap.value = fresh;
       }
     } catch (_) {
@@ -136,11 +211,12 @@ class Api {
 
   /// [force] skips the copy held for this session, for pull-to-refresh.
   Future<MemberDetail> member(String slug, {bool force = false}) async {
-    final held = _memberCache[slug];
+    final key = '${appLang.value.name}/$slug';
+    final held = _memberCache[key];
     if (held != null && !force) return held;
     final json = await _getJson('/api/app/v1/mp/$slug');
     final detail = MemberDetail.fromJson(json);
-    _memberCache[slug] = detail;
+    _memberCache[key] = detail;
     return detail;
   }
 
@@ -157,12 +233,16 @@ class Api {
         .toList();
   }
 
-  Map<String, dynamic>? _election;
+  final _election = <Lang, Map<String, dynamic>>{};
 
   /// The election and the House it produced; kept for the session once read.
   Future<Map<String, dynamic>> election({bool force = false}) async {
-    if (force) _election = null;
-    return _election ??= await _getJson('/api/app/v1/election');
+    final lang = appLang.value;
+    final held = _election[lang];
+    if (held != null && !force) return held;
+    final json = await _getJson('/api/app/v1/election');
+    _election[lang] = json;
+    return json;
   }
 
   Future<List<Story>> news({String? type, int limit = 200}) async {
@@ -198,6 +278,7 @@ class Api {
     return Story(
       id: 'feed-${j['id']}',
       date: dhakaDate(published),
+      publishedAt: published.isEmpty ? null : published,
       dateLabel: '',
       lead: StoryLink(
         title: j['title'] as String? ?? '',
@@ -215,9 +296,9 @@ class Api {
 /// published at 05:00 in Dhaka is 23:00 the day before in UTC, and read as
 /// "গতকাল" it was a day out.
 String dhakaDate(String iso) {
-  final t = DateTime.tryParse(iso);
-  if (t == null) return iso.length >= 10 ? iso.substring(0, 10) : iso;
-  final d = t.toUtc().add(const Duration(hours: 6));
+  final at = DateTime.tryParse(iso);
+  if (at == null) return iso.length >= 10 ? iso.substring(0, 10) : iso;
+  final d = at.toUtc().add(const Duration(hours: 6));
   String two(int n) => n.toString().padLeft(2, '0');
   return '${d.year}-${two(d.month)}-${two(d.day)}';
 }
