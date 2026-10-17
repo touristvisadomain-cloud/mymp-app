@@ -2,14 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'disclaimer.dart';
+import 'i18n.dart';
 import 'screens/cabinet_screen.dart';
+import 'screens/district_screen.dart';
+import 'screens/election_parts.dart';
+import 'screens/member_screen.dart';
 import 'screens/members_screen.dart';
 import 'screens/more_screen.dart';
 import 'screens/news_screen.dart';
+import 'screens/party_screen.dart';
+import 'screens/reserved_screen.dart';
+import 'screens/seat_screen.dart';
 import 'theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The reader's language before the first frame, so an English reader never
+  // sees a flash of Bangla.
+  await appLang.load();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -18,7 +28,23 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
-  runApp(const MyMpApp());
+  _wireLinks();
+  runApp(const LangRoot(child: MyMpApp()));
+}
+
+/// Where a member's page links to: the app's own party, seat and district
+/// screens (the page leaves a link out while its hook is unset).
+void _wireLinks() {
+  void open(BuildContext context, Widget screen) =>
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+  MemberLinks.party = (context, slug) => open(context, PartyScreen.slug(slug));
+  MemberLinks.seat = (context, slug) => open(context, SeatScreen(slug: slug));
+  MemberLinks.district = (context, slug) => open(context, DistrictScreen(slug: slug));
+  // And the election page's.
+  ElectionLinks.seat = MemberLinks.seat;
+  ElectionLinks.district = MemberLinks.district;
+  ElectionLinks.party = MemberLinks.party;
+  ElectionLinks.reserved = (context) => open(context, const ReservedScreen());
 }
 
 class MyMpApp extends StatelessWidget {
@@ -27,7 +53,7 @@ class MyMpApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'আমার এমপি',
+      title: t('আমার এমপি', 'My MP'),
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       home: const Shell(),
@@ -75,11 +101,12 @@ class _ShellState extends State<Shell> {
 
   // Held in an IndexedStack, so a reader who scrolled the member list halfway
   // down and went to look at the news comes back to where they were.
-  final _screens = const [
-    MembersScreen(),
-    NewsScreen(),
-    CabinetScreen(),
-    MoreScreen(),
+  // The cabinet's "all members" chip switches to the members tab.
+  late final _screens = [
+    const MembersScreen(),
+    const NewsScreen(),
+    CabinetScreen(onShowMembers: () => setState(() => _index = 0)),
+    const MoreScreen(),
   ];
 
   @override
@@ -114,26 +141,26 @@ class _ShellState extends State<Shell> {
         child: NavigationBar(
           selectedIndex: _index,
           onDestinationSelected: (i) => setState(() => _index = i),
-          destinations: const [
+          destinations: [
             NavigationDestination(
-              icon: Icon(Icons.groups_outlined),
-              selectedIcon: Icon(Icons.groups_rounded),
-              label: 'সংসদ সদস্য',
+              icon: const Icon(Icons.groups_outlined),
+              selectedIcon: const Icon(Icons.groups_rounded),
+              label: t('সংসদ সদস্য', 'MPs'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.article_outlined),
-              selectedIcon: Icon(Icons.article_rounded),
-              label: 'সংবাদ',
+              icon: const Icon(Icons.article_outlined),
+              selectedIcon: const Icon(Icons.article_rounded),
+              label: t('সংবাদ', 'News'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.account_balance_outlined),
-              selectedIcon: Icon(Icons.account_balance_rounded),
-              label: 'মন্ত্রিসভা',
+              icon: const Icon(Icons.account_balance_outlined),
+              selectedIcon: const Icon(Icons.account_balance_rounded),
+              label: t('মন্ত্রিসভা', 'Cabinet'),
             ),
             NavigationDestination(
-              icon: Icon(Icons.more_horiz_rounded),
-              selectedIcon: Icon(Icons.more_horiz_rounded),
-              label: 'আরও',
+              icon: const Icon(Icons.more_horiz_rounded),
+              selectedIcon: const Icon(Icons.more_horiz_rounded),
+              label: t('আরও', 'More'),
             ),
           ],
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'i18n.dart';
 import 'theme.dart';
 
 /// The green head of every tab: the page's name, a line under it, the mymp
@@ -233,7 +234,7 @@ class HeaderSearchField extends StatelessWidget {
           suffixIcon: controller.text.isEmpty
               ? null
               : IconButton(
-                  tooltip: 'মুছুন',
+                  tooltip: t('মুছুন', 'Clear'),
                   icon: const Icon(
                     Icons.close_rounded,
                     size: 20,

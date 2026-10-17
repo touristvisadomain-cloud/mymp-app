@@ -3,29 +3,66 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../brand_header.dart';
+import '../data/cabinet.dart';
+import '../i18n.dart';
 import '../loading.dart';
-import '../bn.dart';
 import '../models.dart';
+import '../party_logo.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'adviser_screen.dart';
 import 'member_screen.dart';
+import 'members_screen.dart';
 
-/// The cabinet, in the order the secretariat lists it: the Prime Minister, then
-/// ministers, ministers of state, deputy ministers and advisers. An adviser who
-/// is not a member of parliament is shown too, and plainly marked as one.
+/// The cabinet, as the website's মন্ত্রিসভা / Cabinet page shows it: the ranks
+/// with their counts, when the list was last checked and where it comes from,
+/// a search and a ministry filter, the cabinet by party, the Prime Minister,
+/// every rank's people with their ministries and since when, and what changed
+/// on the list. Someone who is not a member of Parliament is shown too, and
+/// plainly marked as one.
 class CabinetScreen extends StatefulWidget {
-  const CabinetScreen({super.key});
+  /// What "সব সংসদ সদস্য" does: the shell can switch to the members tab.
+  /// Without it the member list opens as a page of its own.
+  final VoidCallback? onShowMembers;
+  const CabinetScreen({super.key, this.onShowMembers});
 
   @override
   State<CabinetScreen> createState() => _CabinetScreenState();
 }
 
-class _CabinetScreenState extends State<CabinetScreen> {
-  late Future<List<CabinetPost>> _future = Api.instance.cabinet();
+TextStyle _st(
+  double size, {
+  FontWeight weight = FontWeight.w400,
+  Color colour = AppColors.ink,
+  double height = 1.45,
+}) => TextStyle(
+  fontFamily: 'NotoSansBengali',
+  fontSize: size,
+  fontWeight: weight,
+  color: colour,
+  height: height,
+);
+
+class _CabinetScreenState extends State<CabinetScreen>
+    with RefetchOnLang<CabinetScreen> {
+  late Future<CabinetData> _future = fetchCabinet();
+  final _search = TextEditingController();
+  final _scroll = ScrollController();
+  String _query = '';
+  String? _ministry;
+
+  /// Each rank's section, so its tile can jump to it.
+  final _sections = {for (final r in cabinetRanks) r.bn: GlobalKey()};
+
+  @override
+  void onLangChanged() {
+    // A ministry is chosen by its name in the language it was shown in.
+    _ministry = null;
+    _reload();
+  }
 
   void _reload() => setState(() {
-    _future = Api.instance.cabinet();
+    _future = fetchCabinet();
   });
 
   Future<void> _refresh() async {
@@ -34,150 +71,780 @@ class _CabinetScreenState extends State<CabinetScreen> {
   }
 
   @override
+  void dispose() {
+    _search.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _clear() => setState(() {
+    _search.clear();
+    _query = '';
+    _ministry = null;
+  });
+
+  void _jumpTo(CabinetRank r) {
+    if (_query.isNotEmpty || _ministry != null) _clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final c = _sections[r.bn]?.currentContext;
+      if (c == null || !c.mounted) return;
+      Scrollable.ensureVisible(
+        c,
+        duration: const Duration(milliseconds: 380),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final pushed = ModalRoute.of(context)?.canPop ?? false;
     return Scaffold(
       body: Column(
         children: [
-          const BrandHeader(
-            title: 'মন্ত্রিসভা',
-            subtitle: 'প্রধানমন্ত্রী, মন্ত্রী, প্রতিমন্ত্রী ও উপদেষ্টা',
+          BrandHeader(
+            title: t('মন্ত্রিসভা', 'Cabinet'),
+            subtitle: t(
+              'কে কোন মন্ত্রণালয়ের দায়িত্বে, কবে থেকে, আর কে কোন আসনের সংসদ সদস্য।',
+              'Who is in charge of which ministry, since when, and which seat each one holds as a Member of Parliament.',
+            ),
+            trailing: pushed
+                ? IconButton(
+                    tooltip: t('বন্ধ করুন', 'Close'),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  )
+                : null,
           ),
           Expanded(
-            child: Loaded<List<CabinetPost>>(
+            child: Loaded<CabinetData>(
               future: _future,
               onRetry: _reload,
-              builder: (context, posts) {
-                if (posts.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.account_balance_outlined,
-                    title: 'মন্ত্রিসভার তালিকা পাওয়া যায়নি',
-                    body: 'তালিকা প্রকাশিত হলে এখানে দেখা যাবে।',
-                  );
-                }
+              builder: _page,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                // Grouped by office in order of precedence. The list's own order is
-                // only the order within each source list, and put the advisers
-                // above the Prime Minister.
-                const rank = [
-                  'প্রধানমন্ত্রী',
-                  'মন্ত্রী',
-                  'প্রতিমন্ত্রী',
-                  'উপমন্ত্রী',
-                  'উপদেষ্টা',
-                ];
-                int rankOf(String title) {
-                  final i = rank.indexOf(title);
-                  return i < 0 ? rank.length : i;
-                }
+  Widget _page(BuildContext context, CabinetData data) {
+    if (data.posts.isEmpty && data.pending.isEmpty) {
+      return EmptyState(
+        icon: Icons.account_balance_outlined,
+        title: t(
+          'মন্ত্রিসভার তালিকা পাওয়া যায়নি',
+          'The Cabinet list was not found',
+        ),
+        body: t(
+          'তালিকা প্রকাশিত হলে এখানে দেখা যাবে।',
+          'It will appear here once the list is published.',
+        ),
+        actionLabel: t('আবার চেষ্টা করুন', 'Try again'),
+        onAction: _reload,
+      );
+    }
+    final cabinet = Cabinet.of(data);
+    final q = _query.trim().toLowerCase();
+    final ministry = cabinet.ministries
+        .where((m) => m.key == _ministry)
+        .firstOrNull;
+    final filtering = ministry != null || q.isNotEmpty;
+    final shown = [
+      for (final g in cabinet.groups)
+        MinisterGroup(
+          title: g.title,
+          rank: g.rank,
+          people: g.people
+              .where(
+                (p) =>
+                    (ministry == null ||
+                        p.ministries.any((m) => m.key == ministry.key)) &&
+                    p.matches(q),
+              )
+              .toList(),
+        ),
+    ];
+    final total = shown.fold(0, (n, g) => n + g.people.length);
+    final pm = shown.firstWhere(
+      (g) => g.isPrimeMinister,
+      orElse: () => const MinisterGroup(title: '', people: []),
+    );
+    final rest = shown.where((g) => !g.isPrimeMinister).toList();
 
-                // One card per person: the list has a row per ministry, and a
-                // minister with three portfolios is one minister, not three.
-                final groups =
-                    <
-                      String,
-                      List<({CabinetPost post, List<String> ministries})>
-                    >{};
-                final seen =
-                    <String, ({CabinetPost post, List<String> ministries})>{};
-                for (final p in [
-                  ...posts,
-                ]..sort((a, b) => rankOf(a.title).compareTo(rankOf(b.title)))) {
-                  final who = '${p.title}|${p.member?.id ?? p.plainHolder}';
-                  final held = seen[who];
-                  if (held != null) {
-                    if (p.ministryBn != null &&
-                        !held.ministries.contains(p.ministryBn)) {
-                      held.ministries.add(p.ministryBn!);
-                    }
-                    continue;
-                  }
-                  final entry = (
-                    post: p,
-                    ministries: [if (p.ministryBn != null) p.ministryBn!],
-                  );
-                  seen[who] = entry;
-                  groups.putIfAbsent(p.title, () => []).add(entry);
-                }
-                final peopleCount = {
-                  for (final e in seen.values)
-                    e.post.member?.id ?? e.post.plainHolder,
-                }.length;
+    return RefreshIndicator(
+      color: AppColors.brand,
+      onRefresh: _refresh,
+      child: SingleChildScrollView(
+        controller: _scroll,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          AppSizes.pagePad,
+          16,
+          AppSizes.pagePad,
+          28 + MediaQuery.paddingOf(context).bottom,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              t(
+                'তালিকাটি মন্ত্রিপরিষদ বিভাগের ওয়েবসাইট থেকে দিনে কয়েকবার মিলিয়ে নেওয়া হয়; কোনো নাম হাতে বসানো হয় না।',
+                'The list is checked against the Cabinet Division’s website several times a day; no name is entered by hand.',
+              ),
+              style: _st(13.5, colour: AppColors.inkSoft, height: 1.6),
+            ),
+            const SizedBox(height: 14),
+            _RankTiles(cabinet: cabinet, onTap: _jumpTo),
+            const SizedBox(height: 14),
+            _chips(context, data),
+            const SizedBox(height: 22),
+            _finder(context, cabinet, ministry, total, filtering),
+            if (!filtering) ...[
+              const SizedBox(height: 12),
+              _Composition(people: cabinet.everyone),
+            ],
+            const SizedBox(height: 26),
+            if (pm.people.isNotEmpty)
+              Column(
+                key: _sections[cabinetRanks.first.bn],
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final p in pm.people) ...[
+                    _LeaderCard(p: p, label: pm.label),
+                    const SizedBox(height: 12),
+                  ],
+                  const SizedBox(height: 14),
+                ],
+              ),
+            if (filtering && total == 0) ...[
+              _Dashed(
+                child: Text(
+                  t(
+                    '“${q.isNotEmpty ? _query.trim() : ministry?.label}” দিয়ে কাউকে পাওয়া যায়নি। অন্য বানানে বা মন্ত্রণালয়ের নামে খুঁজে দেখুন।',
+                    'Nobody found for “${q.isNotEmpty ? _query.trim() : ministry?.label}”. Try another spelling or the ministry’s name.',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: _st(14.5, colour: AppColors.muted, height: 1.6),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+            for (final g in rest)
+              if (!filtering || g.people.isNotEmpty)
+                _RankSection(
+                  key: g.rank == null ? null : _sections[g.rank!.bn],
+                  group: g,
+                ),
+            const SizedBox(height: 10),
+            _Changes(data: data),
+          ],
+        ),
+      ),
+    );
+  }
 
-                return RefreshIndicator(
-                  color: AppColors.brand,
-                  onRefresh: _refresh,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSizes.pagePad,
-                      16,
-                      AppSizes.pagePad,
-                      28,
-                    ),
-                    children: [
-                      Text(
-                        'মোট ${bn(peopleCount)} জন দায়িত্বে',
-                        style: const TextStyle(
-                          fontFamily: 'NotoSansBengali',
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.muted,
-                        ),
+  Widget _chips(BuildContext context, CabinetData data) {
+    final checked = t.date(data.checkedAt);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (checked != null)
+          _Chip(
+            icon: Icons.check_rounded,
+            text: '${t('সর্বশেষ যাচাই', 'Last checked')} $checked',
+            background: AppColors.brandSoft,
+            colour: AppColors.brandDark,
+            bold: true,
+          ),
+        if (data.sourceUrl != null)
+          _Chip(
+            text: t('সূত্র: মন্ত্রিপরিষদ বিভাগ', 'Source: Cabinet Division'),
+            trailingIcon: Icons.open_in_new_rounded,
+            background: AppColors.surface,
+            colour: AppColors.inkSoft,
+            border: AppColors.rule,
+            onTap: () => openLink(context, data.sourceUrl!),
+          ),
+        if (data.pending.isNotEmpty)
+          _Chip(
+            icon: Icons.schedule_rounded,
+            text: t(
+              '${t.n(data.pending.length)} জন সংসদ সদস্য কিনা যাচাই হচ্ছে',
+              '${t.count(data.pending.length, '', 'person', 'people')} being checked for whether they are MPs',
+            ),
+            background: AppColors.warnSoft,
+            colour: AppColors.ink,
+          ),
+        _Chip(
+          text: t('সব সংসদ সদস্য', 'All MPs'),
+          trailingIcon: Icons.arrow_forward_rounded,
+          background: Colors.transparent,
+          colour: AppColors.brand,
+          bold: true,
+          onTap:
+              widget.onShowMembers ??
+              () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const MembersScreen())),
+        ),
+      ],
+    );
+  }
+
+  Widget _finder(
+    BuildContext context,
+    Cabinet cabinet,
+    MinistryOption? ministry,
+    int total,
+    bool filtering,
+  ) {
+    final number = t.n(total);
+    final noun = t.en ? ' ${plural(total, 'person', 'people')}' : ' জন';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: AppDecor.card(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _search,
+            onChanged: (v) => setState(() => _query = v),
+            textInputAction: TextInputAction.search,
+            style: _st(15),
+            decoration: InputDecoration(
+              hintText: t(
+                'নাম, মন্ত্রণালয় বা আসন খুঁজুন',
+                'Search by name, ministry or seat',
+              ),
+              isDense: true,
+              fillColor: AppColors.paper,
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: AppColors.muted,
+                size: 21,
+              ),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: t('মুছুন', 'Clear'),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 20,
+                        color: AppColors.muted,
                       ),
-                      const SizedBox(height: 6),
-                      for (final entry in groups.entries) ...[
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10, top: 12),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 4,
-                                height: 18,
-                                decoration: BoxDecoration(
-                                  color: AppColors.brand,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                entry.key,
-                                style: Theme.of(context).textTheme.titleLarge,
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.brandSoft,
-                                  borderRadius: BorderRadius.circular(
-                                    AppSizes.radiusPill,
-                                  ),
-                                ),
-                                child: Text(
-                                  bn(entry.value.length),
-                                  style: const TextStyle(
-                                    fontFamily: 'NotoSansBengali',
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.brand,
-                                  ),
-                                ),
-                              ),
-                            ],
+                      onPressed: () => setState(() {
+                        _search.clear();
+                        _query = '';
+                      }),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Semantics(
+            button: true,
+            label: t('মন্ত্রণালয় বা বিভাগ', 'Ministry or division'),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _pickMinistry(context, cabinet.ministries),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.paper,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: ministry == null ? AppColors.rule : AppColors.brand,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.account_balance_outlined,
+                      size: 19,
+                      color: AppColors.muted,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        ministry?.label ??
+                            t(
+                              'সব মন্ত্রণালয় ও বিভাগ',
+                              'All ministries and divisions',
+                            ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: _st(14.5),
+                      ),
+                    ),
+                    const Icon(
+                      Icons.expand_more_rounded,
+                      color: AppColors.muted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        if (ministry != null)
+                          TextSpan(text: '${ministry.label}: '),
+                        TextSpan(
+                          text: number,
+                          style: _st(14, weight: FontWeight.w700),
+                        ),
+                        TextSpan(text: noun),
+                      ],
+                    ),
+                    style: _st(14, colour: AppColors.muted),
+                  ),
+                ),
+              ),
+              if (filtering) ...[
+                const SizedBox(width: 10),
+                OutlinedButton(
+                  onPressed: _clear,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.brand,
+                    side: const BorderSide(color: AppColors.rule),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, 38),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    t('সবাইকে দেখুন', 'Show everyone'),
+                    style: _st(
+                      13.5,
+                      weight: FontWeight.w600,
+                      colour: AppColors.brand,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickMinistry(
+    BuildContext context,
+    List<MinistryOption> ministries,
+  ) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: AppColors.surface,
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.92,
+        builder: (context, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                t('মন্ত্রণালয় বা বিভাগ', 'Ministry or division'),
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            _option(
+              context,
+              '',
+              t('সব মন্ত্রণালয় ও বিভাগ', 'All ministries and divisions'),
+              _ministry == null,
+            ),
+            for (final m in ministries)
+              _option(
+                context,
+                m.key,
+                '${m.label} (${t.n(m.count)})',
+                m.key == _ministry,
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _ministry = picked.isEmpty ? null : picked);
+  }
+
+  Widget _option(BuildContext context, String key, String label, bool on) =>
+      ListTile(
+        dense: true,
+        selected: on,
+        selectedColor: AppColors.brand,
+        title: Text(
+          label,
+          style: _st(
+            14.5,
+            weight: on ? FontWeight.w600 : FontWeight.w400,
+            colour: on ? AppColors.brand : AppColors.ink,
+          ),
+        ),
+        trailing: on
+            ? const Icon(Icons.check_rounded, color: AppColors.brand)
+            : null,
+        onTap: () => Navigator.of(context).pop(key),
+      );
+}
+
+/// A rounded label in the row under the tiles.
+class _Chip extends StatelessWidget {
+  final IconData? icon;
+  final IconData? trailingIcon;
+  final String text;
+  final Color background;
+  final Color colour;
+  final Color? border;
+  final bool bold;
+  final VoidCallback? onTap;
+  const _Chip({
+    this.icon,
+    this.trailingIcon,
+    required this.text,
+    required this.background,
+    required this.colour,
+    this.border,
+    this.bold = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final body = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        border: border == null ? null : Border.all(color: border!),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 15, color: colour),
+            const SizedBox(width: 6),
+          ],
+          Flexible(
+            child: Text(
+              text,
+              style: _st(
+                13,
+                weight: bold ? FontWeight.w600 : FontWeight.w500,
+                colour: colour,
+                height: 1.35,
+              ),
+            ),
+          ),
+          if (trailingIcon != null) ...[
+            const SizedBox(width: 5),
+            Icon(trailingIcon, size: 14, color: colour),
+          ],
+        ],
+      ),
+    );
+    if (onTap == null) return body;
+    return Semantics(
+      button: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        onTap: onTap,
+        child: body,
+      ),
+    );
+  }
+}
+
+/// The five ranks with how many hold each: the Prime Minister across the
+/// width, the others two to a row. An empty rank is a dashed tile at ০.
+class _RankTiles extends StatelessWidget {
+  final Cabinet cabinet;
+  final ValueChanged<CabinetRank> onTap;
+  const _RankTiles({required this.cabinet, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tile(CabinetRank r) {
+      final n = cabinet.count(r);
+      final name = t(r.bn, r.enPlural);
+      if (n == 0) {
+        return _Dashed(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          align: CrossAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: _st(
+                  13,
+                  weight: FontWeight.w600,
+                  colour: AppColors.muted,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                t('০', '0'),
+                style: _st(
+                  30,
+                  weight: FontWeight.w700,
+                  colour: AppColors.rule,
+                  height: 1.1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                t('এখন কেউ নেই', 'None at present'),
+                style: _st(12, colour: AppColors.muted, height: 1.35),
+              ),
+            ],
+          ),
+        );
+      }
+      return Semantics(
+        button: true,
+        child: Container(
+          decoration: AppDecor.card(),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppSizes.radiusCard),
+              onTap: () => onTap(r),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 12, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: _st(
+                              13,
+                              weight: FontWeight.w600,
+                              colour: AppColors.inkSoft,
+                            ),
                           ),
                         ),
-                        for (final e in entry.value) ...[
-                          _PostCard(post: e.post, ministries: e.ministries),
-                          const SizedBox(height: 10),
-                        ],
-                        const SizedBox(height: 8),
+                        const Icon(
+                          Icons.arrow_downward_rounded,
+                          size: 15,
+                          color: AppColors.brand,
+                        ),
                       ],
-                    ],
-                  ),
-                );
-              },
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      t.n(n),
+                      style: _st(30, weight: FontWeight.w700, height: 1.1),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      t(r.shortBn, r.shortEn),
+                      style: _st(12, colour: AppColors.muted, height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
             ),
+          ),
+        ),
+      );
+    }
+
+    final rows = <Widget>[tile(cabinetRanks.first)];
+    for (var i = 1; i < cabinetRanks.length; i += 2) {
+      rows.add(const SizedBox(height: 10));
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: tile(cabinetRanks[i])),
+              const SizedBox(width: 10),
+              Expanded(
+                child: i + 1 < cabinetRanks.length
+                    ? tile(cabinetRanks[i + 1])
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
+    );
+  }
+}
+
+/// A dashed, quiet box: an empty rank, or nothing found.
+class _Dashed extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets padding;
+  final CrossAxisAlignment align;
+  const _Dashed({
+    required this.child,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+    this.align = CrossAxisAlignment.center,
+  });
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    painter: _DashedBorder(),
+    child: Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(AppSizes.radiusCard),
+      ),
+      child: Column(
+        crossAxisAlignment: align,
+        mainAxisSize: MainAxisSize.min,
+        children: [child],
+      ),
+    ),
+  );
+}
+
+class _DashedBorder extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.rule
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Offset.zero & size,
+          const Radius.circular(AppSizes.radiusCard),
+        ),
+      );
+    for (final metric in path.computeMetrics()) {
+      for (var d = 0.0; d < metric.length; d += 9) {
+        canvas.drawPath(metric.extractPath(d, d + 5), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// The whole cabinet by party in one bar, so its make-up is plain before the
+/// names; those who are not MPs are one grey, apart.
+class _Composition extends StatelessWidget {
+  final List<MinisterPerson> people;
+  const _Composition({required this.people});
+
+  @override
+  Widget build(BuildContext context) {
+    final list = compositionOf(people);
+    final total = people.isEmpty ? 1 : people.length;
+    Color shade(CabinetShare s) =>
+        s.outside ? s.colour.withValues(alpha: 0.45) : s.colour;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSizes.radiusCard),
+        border: Border.all(color: AppColors.rule),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.end,
+            spacing: 8,
+            children: [
+              Text(
+                t('মন্ত্রিসভা দল অনুযায়ী', 'The Cabinet by party'),
+                style: _st(15, weight: FontWeight.w700),
+              ),
+              Text(
+                t.count(people.length, ' জন', 'person', 'people'),
+                style: _st(13, colour: AppColors.muted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Semantics(
+            label: list.map((s) => '${s.label} ${t.n(s.count)}').join(', '),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+              child: SizedBox(
+                height: 12,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final s in list)
+                      Expanded(
+                        flex: (1000 * s.count / total).round().clamp(1, 1000),
+                        child: ColoredBox(color: shade(s)),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 14,
+            runSpacing: 6,
+            children: [
+              for (final s in list)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: shade(s),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(text: '${s.label} '),
+                            TextSpan(
+                              text: t.n(s.count),
+                              style: _st(13, colour: AppColors.muted),
+                            ),
+                          ],
+                        ),
+                        style: _st(13, colour: AppColors.inkSoft),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
           ),
         ],
       ),
@@ -185,146 +852,722 @@ class _CabinetScreenState extends State<CabinetScreen> {
   }
 }
 
-class _PostCard extends StatelessWidget {
-  final CabinetPost post;
-  final List<String> ministries;
-  const _PostCard({required this.post, this.ministries = const []});
+/// Opens the person's own page: a member's profile, or the profile of
+/// someone from outside Parliament.
+VoidCallback? _openPerson(BuildContext context, MinisterPerson p) {
+  final m = p.member;
+  if (m != null) {
+    return () => Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => MemberScreen(member: m)));
+  }
+  final slug = p.adviserSlug;
+  if (slug != null) {
+    return () => Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdviserScreen(
+          slug: slug,
+          nameBn: p.name ?? '',
+          photoUrl: p.photoUrl,
+          fromCabinet: true,
+        ),
+      ),
+    );
+  }
+  return null;
+}
+
+/// A photograph, or the first letter of the name in its place.
+class _Photo extends StatelessWidget {
+  final String? url;
+  final String initial;
+  final double size;
+  final Color colour;
+  const _Photo({
+    required this.url,
+    required this.initial,
+    required this.size,
+    required this.colour,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final m = post.member;
-    final adviser = post.adviserSlug;
-    final body = Row(
-      children: [
-        if (m != null)
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.party(m.party).withValues(alpha: 0.55),
-                width: 2,
+    final fallback = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      color: colour.withValues(alpha: 0.12),
+      child: Text(
+        initial,
+        style: _st(
+          size * 0.38,
+          weight: FontWeight.w700,
+          colour: colour,
+          height: 1.2,
+        ),
+      ),
+    );
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: url == null
+            ? fallback
+            : CachedNetworkImage(
+                imageUrl: url!,
+                fit: BoxFit.cover,
+                fadeInDuration: const Duration(milliseconds: 180),
+                placeholder: (_, _) => Container(color: AppColors.sunk),
+                errorWidget: (_, _, _) => fallback,
               ),
+      ),
+    );
+  }
+}
+
+/// The photo in a ring of the party's colour, so a page of faces reads by
+/// party at a glance.
+class _Portrait extends StatelessWidget {
+  final MinisterPerson p;
+  final double size;
+  const _Portrait({required this.p, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final ring = p.colour ?? AppColors.rule;
+    return ExcludeSemantics(
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(color: ring, shape: BoxShape.circle),
+        child: Container(
+          padding: const EdgeInsets.all(2),
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            shape: BoxShape.circle,
+          ),
+          child: _Photo(
+            url: p.photoUrl,
+            initial: p.initial,
+            size: size,
+            colour: p.colour ?? AppColors.brand,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Party, seat, "not an MP" and the rank the post carries, under the name.
+class _Who extends StatelessWidget {
+  final MinisterPerson p;
+  const _Who({required this.p});
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = _st(13, colour: AppColors.muted, height: 1.4);
+    return Wrap(
+      spacing: 10,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (p.partyName != null)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PartyLogo(abbr: p.party, size: 16),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  p.partyName!,
+                  style: _st(
+                    13,
+                    weight: FontWeight.w600,
+                    colour: AppColors.inkSoft,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        if (p.seat != null) Text(p.seat!, style: muted),
+        if (!p.isMp)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: AppColors.rule),
             ),
-            child: MemberAvatar(member: m, size: 50),
-          )
-        else
-          // An adviser has no member record, but the cabinet list carries a photograph.
-          ClipOval(
-            child: SizedBox(
-              width: 52,
-              height: 52,
-              child: post.photoUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: post.photoUrl!,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, _, _) =>
-                          Container(color: AppColors.sunk),
-                    )
-                  : Container(
-                      color: AppColors.sunk,
-                      child: const Icon(
-                        Icons.person_outline_rounded,
-                        color: AppColors.muted,
-                      ),
-                    ),
+            child: Text(
+              p.pending
+                  ? t('সংসদ সদস্য কিনা যাচাই হচ্ছে', 'Being checked: MP or not')
+                  : t('সংসদ সদস্য নন', 'Not an MP'),
+              style: _st(12, colour: AppColors.muted, height: 1.4),
             ),
           ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        if (p.rankNote != null) Text(p.rankNote!, style: muted),
+      ],
+    );
+  }
+}
+
+/// "সূত্র ↗": the Cabinet Division's page the row was read from.
+class _Source extends StatelessWidget {
+  final MinisterPerson p;
+  const _Source({required this.p});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = p.sourceUrl;
+    if (url == null) return const SizedBox.shrink();
+    return Tooltip(
+      message: t('মন্ত্রিপরিষদ বিভাগের তালিকা', 'The Cabinet Division’s list'),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => openLink(context, url),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                m?.nameBn ?? post.plainHolder,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: 'NotoSansBengali',
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.ink,
-                  height: 1.35,
-                ),
+                t('সূত্র', 'Source'),
+                style: _st(12, colour: AppColors.muted, height: 1.4),
               ),
-              const SizedBox(height: 4),
-              if (ministries.isEmpty)
-                Text(
-                  m?.seatLabel ?? 'সংসদ সদস্য নন',
-                  style: Theme.of(context).textTheme.bodySmall,
-                )
-              else
-                for (final ministry in ministries.take(4))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.only(top: 7, right: 6),
-                          child: Icon(
-                            Icons.circle,
-                            size: 5,
-                            color: AppColors.brand,
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            ministry,
-                            style: const TextStyle(
-                              fontFamily: 'NotoSansBengali',
-                              fontSize: 13,
-                              color: AppColors.inkSoft,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              if (m == null) ...[
-                const SizedBox(height: 6),
-                const Pill('সংসদ সদস্য নন', colour: AppColors.muted),
-              ],
+              const SizedBox(width: 2),
+              const Icon(
+                Icons.north_east_rounded,
+                size: 12,
+                color: AppColors.muted,
+              ),
             ],
           ),
         ),
-        if (m != null || adviser != null)
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: AppColors.rule,
-            size: 24,
-          ),
-      ],
+      ),
     );
+  }
+}
 
-    final VoidCallback? onTap = m != null
-        ? () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => MemberScreen(member: m)))
-        : adviser != null
-        ? () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => AdviserScreen(
-                slug: adviser,
-                nameBn: post.plainHolder,
-                photoUrl: post.photoUrl,
+/// On English, the ministries that have no English name yet: counted, with
+/// the way to the Bangla page that names them, rather than left out silently.
+class _Unnamed extends StatelessWidget {
+  final MinisterPerson p;
+  const _Unnamed({required this.p});
+
+  @override
+  Widget build(BuildContext context) {
+    final n = p.ministries.where((m) => m.name == null).length;
+    if (!t.en || n == 0) return const SizedBox.shrink();
+    final all = n == p.ministries.length;
+    final what = all
+        ? (n == 1 ? 'Ministry' : '$n ministries')
+        : n == 1
+        ? 'One more ministry'
+        : '$n more ministries';
+    return InkWell(
+      onTap: () => openLink(context, '${Api.base}/ministers'),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: '$what, named so far only on the '),
+            TextSpan(
+              text: 'Bangla page',
+              style: _st(
+                12.5,
+                colour: AppColors.muted,
+              ).copyWith(decoration: TextDecoration.underline),
+            ),
+          ],
+        ),
+        style: _st(12.5, colour: AppColors.muted, height: 1.4),
+      ),
+    );
+  }
+}
+
+String _since(String since) => t('$since থেকে', 'Since $since');
+
+/// The head of government: a larger portrait, the rank above the name, every
+/// portfolio, and the way to the full profile.
+class _LeaderCard extends StatelessWidget {
+  final MinisterPerson p;
+  final String label;
+  const _LeaderCard({required this.p, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final open = _openPerson(context, p);
+    final named = p.ministries.where((m) => m.name != null).toList();
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.brandSoft, AppColors.surface, AppColors.surface],
+          stops: [0, 0.55, 1],
+        ),
+        borderRadius: BorderRadius.circular(AppSizes.radiusCard),
+        border: Border.all(color: AppColors.brandRing),
+        boxShadow: AppDecor.shadow,
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // On a phone the site stacks it: the portrait, then the rank above
+          // the name.
+          GestureDetector(
+            onTap: open,
+            child: _Portrait(p: p, size: 96),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: _st(
+                    12,
+                    weight: FontWeight.w700,
+                    colour: AppColors.brand,
+                  ).copyWith(letterSpacing: 0.6),
+                ),
+              ),
+              _Source(p: p),
+            ],
+          ),
+          const SizedBox(height: 2),
+          GestureDetector(
+            onTap: open,
+            child: Text(
+              p.shownName,
+              style: _st(26, weight: FontWeight.w700, height: 1.3),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _Who(p: p),
+          const SizedBox(height: 14),
+          Text(
+            t.count(
+              p.ministries.length,
+              'টি দায়িত্ব',
+              'responsibility',
+              'responsibilities',
+            ),
+            style: _st(12.5, weight: FontWeight.w600, colour: AppColors.muted),
+          ),
+          const SizedBox(height: 8),
+          for (final m in named) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.rule),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    m.name!,
+                    style: _st(14.5, weight: FontWeight.w600, height: 1.4),
+                  ),
+                  if (m.since != null)
+                    Text(
+                      _since(m.since!),
+                      style: _st(12.5, colour: AppColors.muted, height: 1.4),
+                    ),
+                ],
               ),
             ),
-          )
-        : null;
+            const SizedBox(height: 8),
+          ],
+          _Unnamed(p: p),
+          if (open != null) ...[
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: open,
+              iconAlignment: IconAlignment.end,
+              icon: const Icon(Icons.arrow_forward_rounded, size: 17),
+              label: Text(
+                t(
+                  'পুরো পরিচিতি, সংবাদ ও ভিডিও',
+                  'Full profile, news and videos',
+                ),
+                style: _st(
+                  13.5,
+                  weight: FontWeight.w600,
+                  colour: Colors.white,
+                  height: 1.3,
+                ),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.brand,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
 
+/// One person in a rank: portrait, name, party and seat, and their
+/// ministries under a rule of the party's colour, each with since when.
+class _PersonCard extends StatelessWidget {
+  final MinisterPerson p;
+  const _PersonCard({required this.p});
+
+  @override
+  Widget build(BuildContext context) {
+    final open = _openPerson(context, p);
+    final named = p.ministries.where((m) => m.name != null).toList();
     return Container(
       decoration: AppDecor.card(),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: onTap,
+          onTap: open,
           borderRadius: BorderRadius.circular(AppSizes.radiusCard),
-          child: Padding(padding: const EdgeInsets.all(12), child: body),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _Portrait(p: p, size: 50),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            p.shownName,
+                            style: _st(
+                              16.5,
+                              weight: FontWeight.w700,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          _Who(p: p),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    _Source(p: p),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.only(left: 12),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(
+                        color: p.colour ?? AppColors.rule,
+                        width: 3,
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final (i, m) in named.indexed) ...[
+                        if (i > 0) const SizedBox(height: 8),
+                        Text(
+                          m.name!,
+                          style: _st(
+                            14.5,
+                            weight: FontWeight.w600,
+                            height: 1.4,
+                          ),
+                        ),
+                        if (m.since != null)
+                          Text(
+                            _since(m.since!),
+                            style: _st(
+                              12.5,
+                              colour: AppColors.muted,
+                              height: 1.4,
+                            ),
+                          ),
+                      ],
+                      if (named.length < p.ministries.length) ...[
+                        if (named.isNotEmpty) const SizedBox(height: 8),
+                        _Unnamed(p: p),
+                      ],
+                      if (p.ministries.isEmpty)
+                        Text(
+                          t('মন্ত্রণালয় লেখা নেই', 'No ministry listed'),
+                          style: _st(13.5, colour: AppColors.muted),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// A rank: its name and count, what the rank means, and its people.
+class _RankSection extends StatelessWidget {
+  final MinisterGroup group;
+  const _RankSection({super.key, required this.group});
+
+  @override
+  Widget build(BuildContext context) {
+    final g = group;
+    final r = g.rank;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.only(bottom: 10),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppColors.rule)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      g.label,
+                      style: _st(21, weight: FontWeight.w700, height: 1.3),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.brandSoft,
+                        borderRadius: BorderRadius.circular(
+                          AppSizes.radiusPill,
+                        ),
+                      ),
+                      child: Text(
+                        t.count(g.people.length, ' জন', 'person', 'people'),
+                        style: _st(
+                          13,
+                          weight: FontWeight.w600,
+                          colour: AppColors.brand,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (r != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    t(r.noteBn, r.noteEn),
+                    style: _st(13.5, colour: AppColors.muted, height: 1.5),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (g.people.isEmpty)
+            _Dashed(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+              align: CrossAxisAlignment.start,
+              child: Text(
+                t(
+                  'মন্ত্রিপরিষদ বিভাগের তালিকায় এখন কোনো ${g.title} নেই।',
+                  'The Cabinet Division’s list has no ${g.label.toLowerCase()} at present.',
+                ),
+                style: _st(14.5, colour: AppColors.muted, height: 1.6),
+              ),
+            )
+          else
+            for (final (i, p) in g.people.indexed) ...[
+              if (i > 0) const SizedBox(height: 12),
+              _PersonCard(p: p),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+/// পরিবর্তন: what changed on the Cabinet Division's list, and when.
+class _Changes extends StatelessWidget {
+  final CabinetData data;
+  const _Changes({required this.data});
+
+  MemberBrief _member(String slug, String? name) {
+    for (final r in data.posts) {
+      if (r.member?.slug == slug) return r.member!;
+    }
+    for (final m in Api.instance.cached?.members ?? const <MemberBrief>[]) {
+      if (m.slug == slug) return m;
+    }
+    return MemberBrief(id: '', slug: slug, nameBn: name ?? '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final log = data.changes;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          t('পরিবর্তন', 'Changes'),
+          style: _st(22, weight: FontWeight.w700, height: 1.3),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          t(
+            'মন্ত্রিপরিষদ বিভাগের তালিকায় যেদিন যা বদলেছে।',
+            'What changed on the Cabinet Division’s list, and when.',
+          ),
+          style: _st(13.5, colour: AppColors.muted, height: 1.5),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+          decoration: AppDecor.card(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (log.isEmpty)
+                Text(
+                  t(
+                    'এখনো কোনো পরিবর্তন লেখা হয়নি।',
+                    'No changes recorded yet.',
+                  ),
+                  style: _st(14.5, colour: AppColors.muted),
+                )
+              else
+                for (final (i, c) in log.indexed)
+                  _change(context, c, last: i == log.length - 1),
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: AppColors.rule),
+              const SizedBox(height: 10),
+              Text(
+                t(
+                  'দায়িত্ব পাওয়ার তারিখ মন্ত্রিপরিষদ বিভাগের তালিকার বণ্টনের তারিখ। কারও নাম তালিকা থেকে সরে গেলে যেদিন তা ধরা পড়ে, সেদিনকে দায়িত্ব শেষের তারিখ ধরা হয়।',
+                  'The date of taking charge is the date of allocation on the Cabinet Division’s list. When someone’s name leaves the list, the day that is noticed is taken as the day their responsibility ended.',
+                ),
+                style: _st(12.5, colour: AppColors.muted, height: 1.55),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _change(BuildContext context, CabinetChange c, {required bool last}) {
+    final ended = c.kind == 'end';
+    final slug = c.memberSlug;
+    final name = c.nameBn ?? t('নাম জানা নেই', 'Name given only in Bangla');
+    final line = IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 22,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 6),
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: ended ? AppColors.rule : AppColors.brand,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                if (!last)
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.only(left: 4.5, top: 2),
+                      width: 1,
+                      color: AppColors.ruleSoft,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: last ? 0 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (t.date(c.date) case final d?)
+                    Text(
+                      d,
+                      style: _st(12.5, colour: AppColors.muted, height: 1.4),
+                    ),
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: name,
+                          style: _st(
+                            14.5,
+                            weight: FontWeight.w600,
+                            colour: slug != null
+                                ? AppColors.brandDark
+                                : AppColors.ink,
+                            height: 1.6,
+                          ),
+                        ),
+                        if (c.textBn != null) ...[
+                          const TextSpan(text: ', '),
+                          TextSpan(
+                            text: c.textBn,
+                            style: _st(
+                              14.5,
+                              colour: ended ? AppColors.muted : AppColors.ink,
+                              height: 1.6,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    style: _st(14.5, height: 1.6),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (slug == null) return line;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MemberScreen(member: _member(slug, c.nameBn)),
+        ),
+      ),
+      child: line,
     );
   }
 }

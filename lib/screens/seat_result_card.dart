@@ -1,117 +1,260 @@
 import 'package:flutter/material.dart';
 
-import '../bn.dart';
-import '../models.dart';
+import '../data/member.dart';
+import '../i18n.dart';
+import '../loading.dart';
+import '../party_logo.dart';
 import '../theme.dart';
-import '../widgets.dart';
 
-/// A seat's 2026 result on the member's profile: the leading candidates by
-/// votes, the winner marked, and the margin.
+/// A seat's general-election result, as the website's result card draws it
+/// (src/components/results.tsx): every candidate by votes, the winner marked,
+/// each one's share, and where the numbers were read.
 class SeatResultCard extends StatelessWidget {
-  final String seatLabel;
-  final SeatResult result;
+  final ProfileResult result;
+
+  /// "ত্রয়োদশ সংসদ, ২০২৬" / "13th Parliament, 2026".
+  final String parliamentLabel;
   const SeatResultCard({
     super.key,
-    required this.seatLabel,
     required this.result,
+    required this.parliamentLabel,
   });
+
+  /// The link's name, as the website words it by where it points.
+  static String linkLabel(String url) {
+    if (RegExp(r'wikipedia\.org', caseSensitive: false).hasMatch(url)) {
+      return t('উইকিপিডিয়া', 'Wikipedia');
+    }
+    if (RegExp(r'tbsnews\.net', caseSensitive: false).hasMatch(url)) {
+      return t('মূল পাতা', 'Original page');
+    }
+    return t('গেজেট', 'Gazette');
+  }
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final all = result.candidates;
-    final total = all.fold<int>(0, (n, c) => n + c.votes);
-    final shown = all.take(5).toList();
-    final tied = shown.length > 1 && shown[0].votes == shown[1].votes;
+    final cast = all.fold<int>(0, (n, c) => n + c.votes);
+    final top = all.isEmpty || all.first.votes == 0 ? 1 : all.first.votes;
+    final source = result.sourceBn;
+    final note = result.noteBn;
+    final url = result.sourceUrl;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppSizes.radiusCard),
         border: Border.all(color: AppColors.rule),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('$seatLabel আসনের ফল, ২০২৬', style: text.titleMedium),
-          const SizedBox(height: 12),
-          for (final (i, c) in shown.indexed)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 2,
+              crossAxisAlignment: WrapCrossAlignment.end,
+              children: [
+                Text(parliamentLabel, style: text.titleMedium),
+                if (cast > 0)
+                  Text(
+                    t(
+                      'প্রার্থীদের মোট ${t.group(cast)} ভোট',
+                      "Candidates' total: ${t.group(cast)} votes",
+                    ),
+                    style: text.bodySmall,
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          for (final (i, c) in all.indexed) ...[
+            if (i > 0) const Divider(height: 1),
             Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // The name has a line of its own; party, votes and share
+                  // follow on the next, as on the website on a phone.
+                  Text(
+                    c.name ?? '—',
+                    style: TextStyle(
+                      fontFamily: 'NotoSansBengali',
+                      fontSize: 14.5,
+                      height: 1.35,
+                      fontWeight: i == 0 ? FontWeight.w700 : FontWeight.w500,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          c.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: 'NotoSansBengali',
-                            fontSize: 14,
-                            fontWeight: i == 0 && !tied
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                            color: AppColors.ink,
-                          ),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (c.party != null)
+                              Container(
+                                padding: const EdgeInsets.fromLTRB(4, 2, 8, 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.sunk,
+                                  borderRadius: BorderRadius.circular(
+                                    AppSizes.radiusPill,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    PartyLogo(abbr: c.party, size: 15),
+                                    const SizedBox(width: 5),
+                                    Flexible(
+                                      child: Text(
+                                        c.partyBn ?? c.party!,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontFamily: 'NotoSansBengali',
+                                          fontSize: 12,
+                                          color: AppColors.inkSoft,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (i == 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.brandSoft,
+                                  borderRadius: BorderRadius.circular(
+                                    AppSizes.radiusPill,
+                                  ),
+                                ),
+                                child: Text(
+                                  t('বিজয়ী', 'Winner'),
+                                  style: const TextStyle(
+                                    fontFamily: 'NotoSansBengali',
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.brand,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      if (i == 0 && !tied) ...[
-                        const Pill('বিজয়ী', filled: true),
-                        const SizedBox(width: 8),
-                      ],
+                      const SizedBox(width: 8),
                       Text(
-                        bnGroup(c.votes),
+                        t.group(c.votes),
                         style: const TextStyle(
                           fontFamily: 'NotoSansBengali',
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                           color: AppColors.ink,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 50,
+                        child: Text(
+                          '${t.fixed(cast > 0 ? c.votes * 100 / cast : 0)}%',
+                          textAlign: TextAlign.end,
+                          style: text.labelSmall,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
-                      value: total > 0 ? c.votes / total : 0,
-                      minHeight: 7,
+                      value: c.votes / top,
+                      minHeight: 6,
                       color: AppColors.party(c.party),
                       backgroundColor: AppColors.sunk,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${c.partyBn ?? c.party ?? 'দল জানা নেই'}, ${pctBn(c.votes, total)}',
-                    style: text.labelSmall,
-                  ),
                 ],
               ),
             ),
-          if (all.length > shown.length)
-            Text(
-              'আরও ${bn(all.length - shown.length)} জন প্রার্থী ছিলেন।',
-              style: text.labelSmall,
-            ),
-          if (shown.length > 1 && !tied) ...[
-            const SizedBox(height: 4),
-            Text(
-              '${bnGroup(shown[0].votes - shown[1].votes)} ভোটের ব্যবধানে জয়।',
-              style: text.bodyMedium,
-            ),
           ],
-          const SizedBox(height: 8),
-          Text(
-            'সূত্র: দ্য বিজনেস স্ট্যান্ডার্ড ও উইকিপিডিয়া; নির্বাচন কমিশনের গেজেটের সঙ্গে এখনো মিলিয়ে দেখা হয়নি।',
-            style: text.labelSmall?.copyWith(height: 1.5),
+          Container(
+            color: AppColors.paper.withValues(alpha: 0.6),
+            padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    [
+                      t('উৎস:', 'Source:'),
+                      if (source != null)
+                        note != null
+                            ? t('$source। $note', '$source. $note')
+                            : source,
+                    ].join(' '),
+                    style: text.labelSmall?.copyWith(height: 1.55),
+                  ),
+                ),
+                if (url != null) ...[
+                  const SizedBox(width: 10),
+                  DocButton(label: linkLabel(url), url: url),
+                ],
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+}
+
+/// A link to a document elsewhere: a source's page, a notice's PDF.
+class DocButton extends StatelessWidget {
+  final String label;
+  final String url;
+  const DocButton({super.key, required this.label, required this.url});
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: AppColors.brandSoft,
+    borderRadius: BorderRadius.circular(8),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => openLink(context, url),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontFamily: 'NotoSansBengali',
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.brand,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.open_in_new_rounded,
+              size: 13,
+              color: AppColors.brand,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

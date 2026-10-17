@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'i18n.dart';
 import 'theme.dart';
 
 /// The parties whose logo ships with the app, the same files the website shows
@@ -82,7 +83,11 @@ class PartyLogo extends StatelessWidget {
 }
 
 /// Where the logos came from; three of them are CC BY and must name their author.
-const partyLogoCredit =
-    'দলের লোগো উইকিমিডিয়া কমন্স ও বাংলা উইকিপিডিয়া থেকে, শুধু দল চেনানোর জন্য। '
-    'বিজেপির লোগো: Darkedgeblood (CC BY-SA 4.0); খেলাফত মজলিস: Emad.najid (CC BY 4.0); '
-    'গণসংহতি আন্দোলন: NahidHossain (CC BY-SA 4.0); বিএনপি CC0; অন্যগুলো পাবলিক ডোমেইন বা অ-মুক্ত লোগো।';
+String get partyLogoCredit => t(
+  'দলের লোগো উইকিমিডিয়া কমন্স ও বাংলা উইকিপিডিয়া থেকে, শুধু দল চেনানোর জন্য। '
+      'বিজেপির লোগো: Darkedgeblood (CC BY-SA 4.0); খেলাফত মজলিস: Emad.najid (CC BY 4.0); '
+      'গণসংহতি আন্দোলন: NahidHossain (CC BY-SA 4.0); বিএনপি CC0; অন্যগুলো পাবলিক ডোমেইন বা অ-মুক্ত লোগো।',
+  'Party logos are from Wikimedia Commons and Bangla Wikipedia, used only to identify the parties. '
+      'BJP logo: Darkedgeblood (CC BY-SA 4.0); Khelafat Majlis: Emad.najid (CC BY 4.0); '
+      'Ganosamhati Andolan: NahidHossain (CC BY-SA 4.0); BNP CC0; the others are public domain or non-free logos.',
+);

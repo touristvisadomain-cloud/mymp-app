@@ -5,13 +5,21 @@ import '../api.dart';
 import '../brand_header.dart';
 import '../disclaimer.dart';
 import '../bn.dart';
+import '../i18n.dart';
 import '../models.dart';
 import '../party_logo.dart';
 import '../loading.dart';
 import '../theme.dart';
+import '../version.dart';
+import '../widgets.dart';
 
 import 'leaders_strip.dart';
 import 'party_screen.dart';
+import 'sessions_screen.dart';
+import 'statistics_screen.dart';
+import 'seats_screen.dart';
+import 'reserved_screen.dart';
+import 'committees_screen.dart';
 
 /// The parties, and the handful of things a reader looks for once: where the
 /// figures come from, what the app stores, how to report a mistake.
@@ -48,9 +56,12 @@ class _MoreScreenState extends State<MoreScreen> {
     return Scaffold(
       body: Column(
         children: [
-          const BrandHeader(
-            title: 'আরও',
-            subtitle: 'দল, তথ্যের সূত্র ও অ্যাপ সম্পর্কে',
+          BrandHeader(
+            title: t('আরও', 'More'),
+            subtitle: t(
+              'দল, তথ্যের সূত্র ও অ্যাপ সম্পর্কে',
+              'Parties, sources and about the app',
+            ),
           ),
           Expanded(
             child: ListView(
@@ -61,14 +72,73 @@ class _MoreScreenState extends State<MoreScreen> {
                 32,
               ),
               children: [
+                // First, so a reader who cannot read the current language
+                // finds the other one without scrolling.
+                const _LanguageCard(),
+                const SizedBox(height: 18),
+
                 const DisclaimerCard(),
                 const SizedBox(height: 18),
 
                 const ElectionCard(padding: EdgeInsets.zero),
                 const SizedBox(height: 18),
 
+                // The House, as the website's menu has it: seats, reserved
+                // seats, committees and sessions.
+                Text(
+                  t('সংসদ', 'Parliament'),
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: AppDecor.card(),
+                  child: Column(
+                    children: [
+                      _row(
+                        context,
+                        Icons.bar_chart_rounded,
+                        t('পরিসংখ্যান', 'Statistics'),
+                        () => _push(context, const StatisticsScreen()),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        context,
+                        Icons.map_outlined,
+                        t('সব আসন', 'All seats'),
+                        () => _push(context, const SeatsScreen()),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        context,
+                        Icons.woman_outlined,
+                        t('সংরক্ষিত নারী আসন', 'Reserved seats for women'),
+                        () => _push(context, const ReservedScreen()),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        context,
+                        Icons.groups_outlined,
+                        t('কমিটি', 'Committees'),
+                        () => _push(context, const CommitteesScreen()),
+                      ),
+                      const Divider(height: 1),
+                      _row(
+                        context,
+                        Icons.event_note_outlined,
+                        t('অধিবেশন', 'Sessions'),
+                        () => _push(context, const SessionsScreen()),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+
                 if (parties.isNotEmpty) ...[
-                  Text('দল', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    t('দল', 'Parties'),
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 10),
                   for (final p in parties) ...[
                     _PartyRow(party: p),
@@ -83,7 +153,10 @@ class _MoreScreenState extends State<MoreScreen> {
                   const SizedBox(height: 18),
                 ],
 
-                Text('সম্পর্কে', style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  t('সম্পর্কে', 'About'),
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const SizedBox(height: 10),
                 Container(
                   clipBehavior: Clip.antiAlias,
@@ -93,46 +166,51 @@ class _MoreScreenState extends State<MoreScreen> {
                       _row(
                         context,
                         Icons.info_outline_rounded,
-                        'আমার এমপি সম্পর্কে',
-                        () => _open('${Api.base}/somporke'),
+                        t('আমার এমপি সম্পর্কে', 'About My MP'),
+                        () => _open(Api.page('/somporke')),
                       ),
                       const Divider(height: 1),
                       _row(
                         context,
                         Icons.verified_outlined,
-                        'তথ্যের সূত্র',
-                        () => _open('${Api.base}/sutro'),
+                        t('তথ্যের সূত্র', 'Sources'),
+                        () => _open(Api.page('/sutro')),
                       ),
                       const Divider(height: 1),
                       _row(
                         context,
                         Icons.lock_outline_rounded,
-                        'গোপনীয়তা নীতি',
-                        () => _open('${Api.base}/gopaniyota'),
+                        t('গোপনীয়তা নীতি', 'Privacy policy'),
+                        () => _open(Api.page('/gopaniyota')),
                       ),
                       const Divider(height: 1),
                       _row(
                         context,
                         Icons.mail_outline_rounded,
-                        'ভুল জানান / যোগাযোগ',
-                        () => _open('${Api.base}/jogajog'),
+                        t(
+                          'ভুল জানান / যোগাযোগ',
+                          'Report a correction / Contact',
+                        ),
+                        () => _open(Api.page('/jogajog')),
                       ),
                       const Divider(height: 1),
                       _row(
                         context,
                         Icons.public_rounded,
-                        'ওয়েবসাইট: mymp.bd',
-                        () => _open(Api.base),
+                        t('ওয়েবসাইট: mymp.bd', 'Website: mymp.bd'),
+                        () => _open(Api.page('/')),
                       ),
                       const Divider(height: 1),
                       _row(
                         context,
                         Icons.share_outlined,
-                        'অ্যাপটি শেয়ার করুন',
+                        t('অ্যাপটি শেয়ার করুন', 'Share the app'),
                         () => SharePlus.instance.share(
                           ShareParams(
-                            text:
-                                'আমার এমপি: বাংলাদেশের সংসদ সদস্যদের তথ্য, ${Api.base}',
+                            text: t(
+                              'আমার এমপি: বাংলাদেশের সংসদ সদস্যদের তথ্য, ${Api.base}',
+                              'My MP: information on Bangladesh’s Members of Parliament, ${Api.page('/')}',
+                            ),
                           ),
                         ),
                       ),
@@ -151,13 +229,17 @@ class _MoreScreenState extends State<MoreScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'এই অ্যাপ কী রাখে',
+                        t('এই অ্যাপ কী রাখে', 'What this app keeps'),
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'কোনো অ্যাকাউন্ট লাগে না, কিছু জমা নেওয়া হয় না। শুধু সংসদ সদস্যদের তালিকাটি ফোনেই রেখে দেওয়া হয়, '
-                        'যাতে নেটওয়ার্ক না থাকলেও অ্যাপ খোলে। সব তথ্য mymp.bd থেকে আসে।',
+                        t(
+                          'কোনো অ্যাকাউন্ট লাগে না, কিছু জমা নেওয়া হয় না। শুধু সংসদ সদস্যদের তালিকাটি ফোনেই রেখে দেওয়া হয়, '
+                              'যাতে নেটওয়ার্ক না থাকলেও অ্যাপ খোলে। সব তথ্য mymp.bd থেকে আসে।',
+                          'No account is needed and nothing is collected. Only the list of Members of Parliament is kept '
+                              'on the phone, so that the app opens even with no network. All information comes from mymp.bd.',
+                        ),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
@@ -168,8 +250,11 @@ class _MoreScreenState extends State<MoreScreen> {
                 Center(
                   child: Text(
                     data == null
-                        ? 'সংস্করণ ১.২.৫'
-                        : 'সংস্করণ ১.২.৫, ${parliamentBn(data.parliamentNo)} জাতীয় সংসদ',
+                        ? t('সংস্করণ ${t.n(appVersion)}', 'Version $appVersion')
+                        : t(
+                            'সংস্করণ ${t.n(appVersion)}, ${parliamentBn(data.parliamentNo)} জাতীয় সংসদ',
+                            'Version $appVersion, ${t.ord(data.parliamentNo)} Parliament',
+                          ),
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ),
@@ -205,6 +290,33 @@ class _MoreScreenState extends State<MoreScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The reader's language, at the top of the tab.
+class _LanguageCard extends StatelessWidget {
+  const _LanguageCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: AppDecor.card(),
+      child: Row(
+        children: [
+          const Icon(Icons.translate_rounded, size: 20, color: AppColors.brand),
+          const SizedBox(width: 12),
+          Expanded(
+            // Both names, so the row is found in either language.
+            child: Text(
+              'ভাষা / Language',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          ),
+          const LangSwitch(),
+        ],
       ),
     );
   }
@@ -251,7 +363,7 @@ class _PartyRow extends StatelessWidget {
                 ),
               ),
               Text(
-                '${bn(party.seats)} আসন',
+                t.count(party.seats, ' আসন', 'seat', 'seats'),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(width: 6),
@@ -267,3 +379,7 @@ class _PartyRow extends StatelessWidget {
     );
   }
 }
+
+/// Opens one of the app's own screens.
+void _push(BuildContext context, Widget screen) =>
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));

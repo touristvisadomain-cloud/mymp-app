@@ -2,6 +2,8 @@
 // font, on a small phone with a large system font, scrolled end to end.
 // Any overflow or exception fails the test. Needs saved API responses:
 //   MYMP_FIXTURES=<dir> flutter test test/qa_layout_test.dart
+// In English (MYMP_LANG=en), a request with lang=en reads <name>.en.json
+// when there is one, and the Bangla response otherwise.
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mymp/api.dart';
+import 'package:mymp/i18n.dart';
 import 'package:mymp/models.dart';
 import 'package:mymp/screens/adviser_screen.dart';
 import 'package:mymp/screens/cabinet_screen.dart';
@@ -25,6 +28,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 final _dir = Platform.environment['MYMP_FIXTURES'];
 
+final _lang = Platform.environment['MYMP_LANG'] == 'en' ? Lang.en : Lang.bn;
+
+/// The screens' own words in the language under test. (Not `t`: the tests
+/// name their WidgetTester that.)
+final _tr = T.of(_lang);
+
 String _fixture(Uri url) {
   final path = url.path;
   String name;
@@ -34,6 +43,8 @@ String _fixture(Uri url) {
     name = 'election';
   } else if (path.endsWith('/cabinet')) {
     name = 'cabinet';
+  } else if (path.endsWith('/news/counts')) {
+    name = 'news-counts';
   } else if (path.endsWith('/news')) {
     final type = url.queryParameters['type'];
     name = type == null ? 'news' : 'news-$type';
@@ -45,6 +56,10 @@ String _fixture(Uri url) {
     name = 'feed-${path.split('/').last}';
   } else {
     return '';
+  }
+  final en = File('$_dir/$name.en.json');
+  if (url.queryParameters['lang'] == 'en' && en.existsSync()) {
+    return en.readAsStringSync();
   }
   final f = File('$_dir/$name.json');
   return f.existsSync() ? f.readAsStringSync() : '';
@@ -77,6 +92,7 @@ void main() {
   late Bootstrap boot;
 
   setUpAll(() async {
+    appLang.value = _lang;
     TestWidgetsFlutterBinding.ensureInitialized();
     await _loadFonts();
     boot = Bootstrap.fromJson(
@@ -103,15 +119,21 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await t.pump(const Duration(milliseconds: 200));
       }
-      expect(find.text('শীর্ষ নেতৃত্ব'), findsOneWidget);
+      expect(find.text(_tr('শীর্ষ নেতৃত্ব', 'Leadership')), findsOneWidget);
       offline = true;
       await t.fling(find.byType(CustomScrollView), const Offset(0, 500), 1500);
       for (var i = 0; i < 20; i++) {
         await t.pump(const Duration(milliseconds: 200));
       }
-      expect(find.text('শীর্ষ নেতৃত্ব'), findsOneWidget);
-      expect(find.textContaining('হালনাগাদ করা গেল না'), findsOneWidget);
-      expect(find.text('তথ্য আনা গেল না'), findsNothing);
+      expect(find.text(_tr('শীর্ষ নেতৃত্ব', 'Leadership')), findsOneWidget);
+      expect(
+        find.textContaining(_tr('হালনাগাদ করা গেল না', 'Could not update')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(_tr('তথ্য আনা গেল না', 'Could not fetch the information')),
+        findsNothing,
+      );
     }, () => flaky);
   });
 
@@ -168,7 +190,11 @@ void main() {
           // The screen must show its data, not a spinner or an error page;
           // the text may be further down, so it is looked for while scrolling.
           var seen = find.textContaining(shows).evaluate().isNotEmpty;
-          if (find.text('তথ্য আনা গেল না').evaluate().isNotEmpty) {
+          final failed = _tr(
+            'তথ্য আনা গেল না',
+            'Could not fetch the information',
+          );
+          if (find.text(failed).evaluate().isNotEmpty) {
             problems.add('showed the error page');
           }
           final scrollables = find.byType(Scrollable);
@@ -204,7 +230,7 @@ void main() {
             t,
             const MembersScreen(),
             flings: 8,
-            shows: 'শীর্ষ নেতৃত্ব',
+            shows: _tr('শীর্ষ নেতৃত্ব', 'Leadership'),
           ),
           isEmpty,
         );
@@ -215,7 +241,12 @@ void main() {
           (x) => x.slug == 'ariful-haque-choudhury',
         );
         expect(
-          await run(t, MemberScreen(member: m), flings: 14, shows: 'তথ্য'),
+          await run(
+            t,
+            MemberScreen(member: m),
+            flings: 14,
+            shows: _tr('তথ্য', 'Details'),
+          ),
           isEmpty,
         );
       });
@@ -225,7 +256,12 @@ void main() {
           (x) => x.slug == 'kazi-shah-mofazzal-houssain-kaikobad',
         );
         expect(
-          await run(t, MemberScreen(member: m), flings: 14, shows: 'তথ্য'),
+          await run(
+            t,
+            MemberScreen(member: m),
+            flings: 14,
+            shows: _tr('তথ্য', 'Details'),
+          ),
           isEmpty,
         );
       });
@@ -237,9 +273,9 @@ void main() {
             t,
             MemberScreen(member: m),
             flings: 6,
-            shows: 'সংবাদ ও ভিডিও',
+            shows: _tr('সংবাদ ও ভিডিও', 'News and videos'),
             actions: (t) async {
-              await t.tap(find.text('সংবাদ ও ভিডিও'));
+              await t.tap(find.text(_tr('সংবাদ ও ভিডিও', 'News and videos')));
               for (var i = 0; i < 10; i++) {
                 await t.pump(const Duration(milliseconds: 200));
               }
@@ -251,7 +287,12 @@ void main() {
 
       testWidgets('election figures', (t) async {
         expect(
-          await run(t, const ElectionScreen(), flings: 20, shows: 'সংসদের গঠন'),
+          await run(
+            t,
+            const ElectionScreen(),
+            flings: 20,
+            shows: _tr('ফলাফল', 'Results'),
+          ),
           isEmpty,
         );
       });
@@ -262,7 +303,7 @@ void main() {
             t,
             const NewsScreen(),
             flings: 10,
-            shows: 'ভিডিওতে সংসদ সদস্যরা',
+            shows: _tr('সংবাদ কীভাবে যুক্ত হয়', 'How the news is added'),
           ),
           isEmpty,
         );
@@ -270,7 +311,12 @@ void main() {
 
       testWidgets('cabinet', (t) async {
         expect(
-          await run(t, const CabinetScreen(), flings: 30, shows: 'মোট'),
+          await run(
+            t,
+            const CabinetScreen(),
+            flings: 30,
+            shows: _tr('মন্ত্রিসভা দল অনুযায়ী', 'The Cabinet by party'),
+          ),
           isEmpty,
         );
       });
@@ -284,7 +330,7 @@ void main() {
               nameBn: 'ড. খলিলুর রহমান',
             ),
             flings: 8,
-            shows: 'খলিলুর',
+            shows: _tr('খলিলুর', 'Not an MP'),
           ),
           isEmpty,
         );
@@ -296,7 +342,7 @@ void main() {
             t,
             const MoreScreen(),
             flings: 8,
-            shows: 'জামায়াতে ইসলামী',
+            shows: _tr('জামায়াতে ইসলামী', 'About My MP'),
           ),
           isEmpty,
         );
@@ -311,7 +357,7 @@ void main() {
             t,
             PartyScreen(party: boot.parties[4]),
             flings: 3,
-            shows: 'জন সংসদ সদস্য',
+            shows: _tr('জন সংসদ সদস্য', 'Members of Parliament'),
           ),
           isEmpty,
         );

@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import 'bn.dart';
+import 'i18n.dart';
 import 'models.dart';
 import 'party_logo.dart';
 import 'theme.dart';
@@ -175,13 +176,20 @@ class MemberTile extends StatelessWidget {
                             color: AppColors.muted,
                           ),
                           const SizedBox(width: 3),
-                          Text(
-                            member.seatLabel,
-                            style: const TextStyle(
-                              fontFamily: 'NotoSansBengali',
-                              fontSize: 13,
-                              color: AppColors.muted,
-                              height: 1.3,
+                          // Shrinks before it overflows: an English seat name
+                          // ("Chapai Nawabganj-3") beside a party chip on a
+                          // small phone with a large font did not fit.
+                          Flexible(
+                            child: Text(
+                              member.seatLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'NotoSansBengali',
+                                fontSize: 13,
+                                color: AppColors.muted,
+                                height: 1.3,
+                              ),
                             ),
                           ),
                           if (member.party != null) ...[
@@ -402,9 +410,81 @@ class ErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => EmptyState(
     icon: Icons.wifi_off_rounded,
-    title: 'তথ্য আনা গেল না',
+    title: t('তথ্য আনা গেল না', 'Could not fetch the information'),
     body: message,
-    actionLabel: 'আবার চেষ্টা করুন',
+    actionLabel: t('আবার চেষ্টা করুন', 'Try again'),
     onAction: onRetry,
   );
+}
+
+/// বাংলা | English: the reader's language, two segments, the chosen one
+/// filled. Each label is written in its own language, so a reader who cannot
+/// read the other one can still find theirs. [onDark] draws it in white for
+/// the green header; [compact] is the small one on the first-run notice.
+class LangSwitch extends StatelessWidget {
+  final bool onDark;
+  final bool compact;
+  const LangSwitch({super.key, this.onDark = false, this.compact = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final current = T.watch(context).lang;
+    final line = onDark ? Colors.white.withValues(alpha: 0.5) : AppColors.rule;
+    Widget segment(Lang lang, String label) {
+      final on = lang == current;
+      final Color bg;
+      final Color fg;
+      if (onDark) {
+        bg = on ? Colors.white : Colors.transparent;
+        fg = on ? AppColors.brandDark : Colors.white;
+      } else {
+        bg = on ? AppColors.brand : AppColors.surface;
+        fg = on ? Colors.white : AppColors.inkSoft;
+      }
+      return Semantics(
+        button: true,
+        selected: on,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => appLang.choose(lang),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 10 : 16,
+              vertical: compact ? 4 : 8,
+            ),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'NotoSansBengali',
+                fontSize: compact ? 12.5 : 14,
+                fontWeight: FontWeight.w700,
+                color: fg,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: onDark
+            ? Colors.white.withValues(alpha: 0.12)
+            : AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        border: Border.all(color: line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [segment(Lang.bn, 'বাংলা'), segment(Lang.en, 'English')],
+      ),
+    );
+  }
 }

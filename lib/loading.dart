@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'i18n.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -11,9 +12,9 @@ import 'widgets.dart';
 /// with no signal does not swap 348 members for an error page. A spinner or
 /// the error page appears only when there is nothing to show yet. When a
 /// refresh fails over good data, a short note says so once.
-class Loaded<T> extends StatefulWidget {
-  final Future<T> future;
-  final Widget Function(BuildContext context, T data) builder;
+class Loaded<D> extends StatefulWidget {
+  final Future<D> future;
+  final Widget Function(BuildContext context, D data) builder;
   final VoidCallback onRetry;
 
   /// What the spinner sits in: a sliver list needs a box, a tab needs a centre.
@@ -28,22 +29,22 @@ class Loaded<T> extends StatefulWidget {
   });
 
   @override
-  State<Loaded<T>> createState() => _LoadedState<T>();
+  State<Loaded<D>> createState() => _LoadedState<D>();
 }
 
-class _LoadedState<T> extends State<Loaded<T>> {
-  T? _last;
+class _LoadedState<D> extends State<Loaded<D>> {
+  D? _last;
   bool _hasLast = false;
-  Future<T>? _noted;
+  Future<D>? _noted;
 
   @override
   Widget build(BuildContext context) {
     final wrap = widget.wrap ?? (Widget c) => c;
-    return FutureBuilder<T>(
+    return FutureBuilder<D>(
       future: widget.future,
       builder: (context, snap) {
         if (snap.hasData) {
-          _last = snap.data as T;
+          _last = snap.data as D;
           _hasLast = true;
         }
         if (snap.connectionState == ConnectionState.waiting && !_hasLast) {
@@ -63,16 +64,19 @@ class _LoadedState<T> extends State<Loaded<T>> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-              const SnackBar(
+              SnackBar(
                 content: Text(
-                  'হালনাগাদ করা গেল না; আগের তথ্য দেখানো হচ্ছে।',
-                  style: TextStyle(fontFamily: 'NotoSansBengali'),
+                  t(
+                    'হালনাগাদ করা গেল না; আগের তথ্য দেখানো হচ্ছে।',
+                    'Could not update; showing the earlier information.',
+                  ),
+                  style: const TextStyle(fontFamily: 'NotoSansBengali'),
                 ),
               ),
             );
           });
         }
-        return widget.builder(context, _last as T);
+        return widget.builder(context, _last as D);
       },
     );
   }
@@ -95,8 +99,11 @@ Future<void> openLink(BuildContext context, String url) async {
     SnackBar(
       content: Text(
         url.startsWith('mailto:')
-            ? 'ফোনে কোনো ইমেইল অ্যাপ পাওয়া যায়নি।'
-            : 'লিংকটি খোলা যায়নি।',
+            ? t(
+                'ফোনে কোনো ইমেইল অ্যাপ পাওয়া যায়নি।',
+                'No email app was found on the phone.',
+              )
+            : t('লিংকটি খোলা যায়নি।', 'The link could not be opened.'),
         style: const TextStyle(fontFamily: 'NotoSansBengali'),
       ),
     ),

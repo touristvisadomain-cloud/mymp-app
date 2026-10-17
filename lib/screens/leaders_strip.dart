@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../i18n.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -30,7 +31,7 @@ class LeadersStrip extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSizes.pagePad),
             child: Text(
-              'শীর্ষ নেতৃত্ব',
+              t('শীর্ষ নেতৃত্ব', 'Leadership'),
               style: Theme.of(context).textTheme.titleLarge,
             ),
           ),
@@ -176,9 +177,15 @@ class ElectionCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('নির্বাচন পরিসংখ্যান', style: text.titleMedium),
                         Text(
-                          'আসন, ভোট, ভোটার ও সদস্যদের হিসাব',
+                          t('ত্রয়োদশ নির্বাচন', '2026 Election'),
+                          style: text.titleMedium,
+                        ),
+                        Text(
+                          t(
+                            'মানচিত্র, ফলাফল, ভোটার ও জেলা অনুযায়ী আসন',
+                            'Map, results, voters and seats by district',
+                          ),
                           style: text.labelSmall,
                         ),
                       ],
