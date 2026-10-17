@@ -264,6 +264,24 @@ class _MemberFeedState extends State<MemberFeed>
     final rangeItems = rangeData == null ? null : _byOutlet(rangeData.items);
     final g = T.english.group;
 
+    // Whether any headline on show is a machine translation (English only).
+    final openList = _openMonth == null
+        ? null
+        : _months[_monthKey(_openMonth!)];
+    bool translated(String key, List<FeedEntry>? list) =>
+        list != null &&
+        list.take(_shown[key] ?? _step).any((i) => i.titleTranslated);
+    final machine =
+        t.en &&
+        (data.pinned.any((i) => i.titleTranslated) ||
+            translated('current', items) ||
+            translated('range', rangeItems) ||
+            (openList != null &&
+                translated(
+                  'month/${_monthKey(_openMonth!)}',
+                  _byOutlet(openList),
+                )));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -434,6 +452,7 @@ class _MemberFeedState extends State<MemberFeed>
           const Divider(height: 1),
           for (final m in earlier) ...[_monthRow(m), const Divider(height: 1)],
         ],
+        MachineNote(show: machine, padding: const EdgeInsets.only(top: 14)),
         const SizedBox(height: 14),
         Text.rich(
           TextSpan(

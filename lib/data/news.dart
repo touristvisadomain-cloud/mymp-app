@@ -153,7 +153,17 @@ class FeedEntry {
 
   /// "news", "video", "press" or "social".
   final String type;
+
+  /// The headline to show: the outlet's own, or on English its machine
+  /// translation when the site has one.
   final String title;
+
+  /// On English: the outlet's own headline (null on Bangla and from a site
+  /// older than the translations).
+  final String? titleOriginal;
+
+  /// On English: [title] is Google Translate's translation.
+  final bool titleTranslated;
   final String url;
   final String? summary;
 
@@ -171,6 +181,8 @@ class FeedEntry {
     required this.id,
     required this.type,
     required this.title,
+    this.titleOriginal,
+    this.titleTranslated = false,
     required this.url,
     this.summary,
     this.outletName,
@@ -187,6 +199,8 @@ class FeedEntry {
     id: _int(j['id']),
     type: j['type'] as String? ?? 'news',
     title: j['title'] as String? ?? '',
+    titleOriginal: _str(j['titleOriginal']),
+    titleTranslated: j['titleTranslated'] == true,
     url: j['url'] as String? ?? '',
     summary: j['summary'] is String
         ? _str((j['summary'] as String).trim())
@@ -401,6 +415,7 @@ String foldHeadline(String s) =>
 String storySearchKey(Story s) => foldHeadline(
   [
     s.lead.title,
+    ?s.lead.titleOriginal,
     ...s.also.map((a) => a.title),
     ...s.members.map((m) => m.name),
   ].join(' '),

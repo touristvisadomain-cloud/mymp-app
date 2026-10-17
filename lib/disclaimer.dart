@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'i18n.dart';
 import 'loading.dart';
+import 'maps/google.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -26,6 +27,16 @@ String get kNotOfficial => t(
   'My MP is an independent, non-governmental information service. It is not an app of the Parliament of '
       'Bangladesh, the Election Commission, the Cabinet Division or any government office; it does not represent '
       'any government body and is not affiliated with any.',
+);
+
+/// The same statement, short, for the notice the app opens with (owner,
+/// 2026-10-17: the long one was too much to read before anything else). It
+/// still says the two things Play asks for: not the government's, and not
+/// affiliated with it.
+String get kNotOfficialShort => t(
+  'আমার এমপি একটি স্বাধীন, বেসরকারি তথ্যসেবা। এটি সরকারি অ্যাপ নয় এবং কোনো সরকারি প্রতিষ্ঠানের সঙ্গে যুক্ত নয়।',
+  'My MP is an independent, non-governmental information service. It is not a government app and is not '
+      'affiliated with any government body.',
 );
 
 typedef InfoSource = ({String label, String what, String url});
@@ -112,7 +123,10 @@ String get kNewsLine => t(
       'অ্যাপ নিজে কোনো সংবাদ লেখে না।',
   'In the News section, every headline is shown with the name of its news outlet; tapping it opens the story '
       'on that outlet’s own site. Headlines come from news outlets in Bangladesh and abroad; videos come only '
-      'from these outlets’ own YouTube channels. The app itself writes no news.',
+      'from these outlets’ own YouTube channels. The app itself writes no news. On the English screens the '
+      'headlines are translated automatically from Bangla by Google Translate (on the website’s server; the app '
+      'sends nothing), so they may read awkwardly; a headline not yet translated is shown in Bangla, and opening '
+      'a story shows the original.',
 );
 
 TextStyle _bn(double size, FontWeight weight, Color color, {double? height}) =>
@@ -185,6 +199,23 @@ Widget _groupTitle(String text) => Padding(
   child: Text(text, style: _bn(12, FontWeight.w700, AppColors.muted)),
 );
 
+/// Google's privacy policy, which governs what its map service receives.
+const kGooglePrivacyUrl = 'https://policies.google.com/privacy';
+
+/// The maps, said plainly (owner, 2026-10-17): Google's, with what that
+/// means. Shown only by a build whose maps are Google's (lib/maps/google.dart);
+/// a build without a key draws its own maps and sends nothing to Google.
+String get kMapsLine => t(
+  'অ্যাপের মানচিত্রগুলো Google Maps-এর। আসন ও জেলার সীমানা আমার এমপির নিজের (OpenStreetMap, OCHA ও geoBoundaries-এর মানচিত্র থেকে), '
+      'Google-এর মানচিত্রের ওপর আঁকা। মানচিত্র দেখানোর জন্য Google আপনার ফোন থেকে সাধারণ কারিগরি তথ্য পায় (যেমন IP ঠিকানা, '
+      'ফোন ও অ্যাপের ধরন), যা Google-এর গোপনীয়তা নীতির অধীন। অ্যাপ নিজে কোনো অ্যাকাউন্ট খোলায় না, কিছু সংগ্রহ করে না, '
+      'আপনার অবস্থানও জানতে চায় না।',
+  'The app’s maps are Google Maps. The seat and district boundaries are My MP’s own (from the maps of OpenStreetMap, OCHA '
+      'and geoBoundaries), drawn over Google’s map. To show the maps, Google receives the usual technical data from your phone '
+      '(such as its IP address and the kind of phone and app), under Google’s privacy policy. The app itself has no account, '
+      'collects nothing and does not ask where you are.',
+);
+
 /// Every source, grouped, each one a link. Used by the card on the "আরও" tab,
 /// by the first-open notice and by the sheet the home screen's footnote opens.
 class SourceList extends StatelessWidget {
@@ -202,10 +233,76 @@ class SourceList extends StatelessWidget {
         for (final s in kOtherSources)
           _SourceRow(s, icon: Icons.menu_book_outlined),
         Padding(
-          padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+          padding: EdgeInsets.fromLTRB(14, 8, 14, GoogleMaps.enabled ? 0 : 12),
           child: Text(
             kNewsLine,
             style: _bn(12, FontWeight.w400, AppColors.muted, height: 1.5),
+          ),
+        ),
+        if (GoogleMaps.enabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+            child: Text(
+              kMapsLine,
+              style: _bn(12, FontWeight.w400, AppColors.muted, height: 1.5),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The sources on one line each, name and address, still a link: for the
+/// first-open notice. The Business Standard (the seat results) is left out
+/// here at the owner's wish (2026-10-17); it stays on the "আরও" tab and under
+/// every seat's result, and the last line says the full list is there, so the
+/// notice never reads as the whole list.
+class SourceLinks extends StatelessWidget {
+  const SourceLinks({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget row(InfoSource s, IconData icon) => InkWell(
+      onTap: () => openLink(context, s.url),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: AppColors.brand),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                s.label,
+                style: _bn(13, FontWeight.w600, AppColors.ink),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.open_in_new_rounded,
+              size: 15,
+              color: AppColors.muted,
+            ),
+          ],
+        ),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _groupTitle(t('তথ্যের সূত্র', 'Sources')),
+        for (final s in kOfficialSources)
+          row(s, Icons.account_balance_outlined),
+        for (final s in kOtherSources)
+          if (!s.url.contains('tbsnews.net')) row(s, Icons.menu_book_outlined),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+          child: Text(
+            t(
+              'ভোটের ফলের সূত্রসহ সব সূত্রের তালিকা, আর কোনটি থেকে কী তথ্য: আরও ট্যাবে।',
+              'The full list of sources, including the source of the election results, and what each '
+                  'supplies: on the More tab.',
+            ),
+            style: _bn(12, FontWeight.w400, AppColors.muted, height: 1.45),
           ),
         ),
       ],
@@ -303,7 +400,8 @@ Future<void> showSourcesSheet(BuildContext context) {
 }
 
 /// Shown once, the first time the app opens, before anything else is read:
-/// what the app is not, and every source it draws on, each one a link.
+/// what the app is not, and every source it draws on, each one a link; short,
+/// with the details on the "আরও" tab.
 Future<void> showDisclaimerOnce(BuildContext context) async {
   // v2: the sources are now listed one by one (Play review, 21 September 2026).
   const key = 'not_official_notice_v2';
@@ -339,12 +437,12 @@ Future<void> showDisclaimerOnce(BuildContext context) async {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 child: Text(
-                  kNotOfficial,
-                  style: _bn(14, FontWeight.w400, AppColors.ink, height: 1.55),
+                  kNotOfficialShort,
+                  style: _bn(14, FontWeight.w500, AppColors.ink, height: 1.55),
                 ),
               ),
               const SizedBox(height: 4),
-              const SourceList(),
+              const SourceLinks(),
             ],
           ),
         ),

@@ -641,6 +641,14 @@ class _NewsScreenState extends State<NewsScreen>
                 child: StoryCard(story: s),
               ),
           ],
+        if (!loading && !failed)
+          MachineNote(
+            // The headlines here and in the video row above.
+            show:
+                visible.any((s) => s.translated) ||
+                latest.where((s) => s.isVideo).take(6).any((s) => s.translated),
+            padding: const EdgeInsets.only(top: 2, bottom: 6),
+          ),
         if (!loading &&
             !failed &&
             (filtered.length > visible.length || picked?.next != null)) ...[
@@ -1126,6 +1134,13 @@ class _HowNewsIsAdded extends StatelessWidget {
           "Only the headline, the outlet's name, the date and the link to the original story are kept. The full story is not copied.",
         ),
       ),
+      // The machine translation is the English screens' alone.
+      if (t.en)
+        const TextSpan(
+          text:
+              'On these English screens, headlines are translated automatically from Bangla by Google Translate, so '
+              'they may read awkwardly; a headline not yet translated is shown in Bangla. Open a story to read the original.',
+        ),
     ];
     return Container(
       padding: const EdgeInsets.all(16),

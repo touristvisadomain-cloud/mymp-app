@@ -64,8 +64,10 @@ class Api {
   /// (`lang=en` is added in English). For the screens' own data files
   /// (lib/data/*.dart), which parse what they need from it; see the site's
   /// docs/app-api.md for every route and its shape.
-  Future<Map<String, dynamic>> getJson(String path, {Duration timeout = const Duration(seconds: 20)}) =>
-      _getJson(path, timeout: timeout);
+  Future<Map<String, dynamic>> getJson(
+    String path, {
+    Duration timeout = const Duration(seconds: 20),
+  }) => _getJson(path, timeout: timeout);
 
   Future<Map<String, dynamic>> _getJson(
     String path, {
@@ -291,6 +293,10 @@ class Api {
         title: j['title'] as String? ?? '',
         source: j['outletName'] as String? ?? '',
         url: j['url'] as String? ?? '',
+        titleOriginal: j['titleOriginal'] is String
+            ? j['titleOriginal'] as String
+            : null,
+        titleTranslated: j['titleTranslated'] == true,
       ),
       kind: j['type'] as String? ?? 'news',
       thumbnail: j['thumbnailUrl'] as String?,

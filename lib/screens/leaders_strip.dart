@@ -144,59 +144,196 @@ class ElectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
+    // A banner in the brand green, so the way into the election stands out
+    // from the white cards around it: what it holds as chips, and a button.
+    const font = 'NotoSansBengali';
+    void open() => Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ElectionScreen()));
+    final chips = [
+      (Icons.map_outlined, t('মানচিত্র', 'Map')),
+      (Icons.bar_chart_rounded, t('ফলাফল', 'Results')),
+      (Icons.groups_outlined, t('ভোটার', 'Voters')),
+      (Icons.location_city_outlined, t('জেলাভিত্তিক আসন', 'Seats by district')),
+    ];
     return Padding(
       padding: padding,
       child: Container(
-        decoration: AppDecor.card(),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppSizes.radiusCard),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [AppColors.brand, AppColors.brandDark],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.brandDark.withValues(alpha: 0.25),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(AppSizes.radiusCard),
-            onTap: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const ElectionScreen())),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.brandSoft,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.how_to_vote_rounded,
-                      color: AppColors.brand,
-                    ),
+            onTap: open,
+            child: Stack(
+              children: [
+                // The ballot mark, large and faint, behind the words.
+                Positioned(
+                  right: -18,
+                  top: -14,
+                  child: Icon(
+                    Icons.how_to_vote_rounded,
+                    size: 132,
+                    color: Colors.white.withValues(alpha: 0.08),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          t('ত্রয়োদশ নির্বাচন', '2026 Election'),
-                          style: text.titleMedium,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 3,
                         ),
-                        Text(
-                          t(
-                            'মানচিত্র, ফলাফল, ভোটার ও জেলা অনুযায়ী আসন',
-                            'Map, results, voters and seats by district',
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(
+                            AppSizes.radiusPill,
                           ),
-                          style: text.labelSmall,
                         ),
-                      ],
-                    ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.how_to_vote_rounded,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              t('নির্বাচন ২০২৬', 'Election 2026'),
+                              style: const TextStyle(
+                                fontFamily: font,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        t(
+                          'ত্রয়োদশ জাতীয় সংসদ নির্বাচন',
+                          'Election to the 13th Parliament',
+                        ),
+                        style: const TextStyle(
+                          fontFamily: font,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        t(
+                          'কোন আসনে কে জিতেছে, কত ভোট পেয়েছে, দেখুন মানচিত্রে',
+                          'Who won each seat and by how many votes, on the map',
+                        ),
+                        style: TextStyle(
+                          fontFamily: font,
+                          fontSize: 13.5,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final (icon, label) in chips)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.12),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.22),
+                                ),
+                                borderRadius: BorderRadius.circular(
+                                  AppSizes.radiusPill,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(icon, size: 14, color: Colors.white),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    label,
+                                    style: const TextStyle(
+                                      fontFamily: font,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(
+                            AppSizes.radiusPill,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              t('ফলাফল দেখুন', 'See the results'),
+                              style: const TextStyle(
+                                fontFamily: font,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.brand,
+                                height: 1.3,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 17,
+                              color: AppColors.brand,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    color: AppColors.muted,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

@@ -16,11 +16,16 @@ import 'election_screen.dart' show fullPartyName;
 /// and the country's voters, from the same /election answer as
 /// [ElectionScreen]'s page.
 class StatisticsScreen extends StatefulWidget {
-  const StatisticsScreen({super.key});
+  /// A section to open at, as the website's /parisonkhan#nari links do.
+  final StatsSection? section;
+  const StatisticsScreen({super.key, this.section});
 
   @override
   State<StatisticsScreen> createState() => _StatisticsScreenState();
 }
+
+/// The sections a link may open the statistics at.
+enum StatsSection { women, experience }
 
 class _StatisticsScreenState extends State<StatisticsScreen>
     with RefetchOnLang<StatisticsScreen> {
@@ -32,6 +37,28 @@ class _StatisticsScreenState extends State<StatisticsScreen>
   final _womenKey = GlobalKey();
   final _experienceKey = GlobalKey();
   final _votersKey = GlobalKey();
+
+  /// Whether the section asked for has been scrolled to, once.
+  bool _jumped = false;
+
+  void _jumpOnce() {
+    final section = widget.section;
+    if (_jumped || section == null) return;
+    _jumped = true;
+    final key = switch (section) {
+      StatsSection.women => _womenKey,
+      StatsSection.experience => _experienceKey,
+    };
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final c = key.currentContext;
+      if (c == null || !c.mounted) return;
+      Scrollable.ensureVisible(
+        c,
+        duration: const Duration(milliseconds: 380),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
 
   @override
   void onLangChanged() => setState(() {
@@ -74,6 +101,7 @@ class _StatisticsScreenState extends State<StatisticsScreen>
   }
 
   Widget _body(BuildContext context, ElectionData e) {
+    _jumpOnce();
     final h = e.house;
     final s = e.members;
     final total = h.total;

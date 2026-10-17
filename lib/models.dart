@@ -3,7 +3,9 @@
 ///
 /// The field names say Bn because Bangla came first; with `lang=en` the site
 /// sends the same keys carrying English (null where it has no English), so in
-/// English `nameBn` holds the English name. News headlines stay Bangla.
+/// English `nameBn` holds the English name. A news headline in English is
+/// Google Translate's English once the site has it (`titleTranslated`), and
+/// the outlet's own Bangla until then.
 library;
 
 import 'i18n.dart';
@@ -435,19 +437,34 @@ class AdviserDetail {
 }
 
 class StoryLink {
+  /// The headline to show: the outlet's own, or on English its machine
+  /// translation when the site has one.
   final String title;
   final String source;
   final String url;
+
+  /// On English: the outlet's own headline, as published (usually Bangla).
+  /// Null on Bangla, and from a site older than the translations.
+  final String? titleOriginal;
+
+  /// On English: [title] is Google Translate's translation of
+  /// [titleOriginal]. False on Bangla and from an older site.
+  final bool titleTranslated;
+
   const StoryLink({
     required this.title,
     required this.source,
     required this.url,
+    this.titleOriginal,
+    this.titleTranslated = false,
   });
 
   factory StoryLink.fromJson(Map<String, dynamic> j) => StoryLink(
     title: j['title'] as String? ?? '',
     source: j['source'] as String? ?? '',
     url: j['url'] as String? ?? '',
+    titleOriginal: _s(j['titleOriginal']),
+    titleTranslated: _b(j['titleTranslated']),
   );
 }
 
@@ -493,6 +510,9 @@ class Story {
   });
 
   bool get isVideo => kind == 'video';
+
+  /// Its headline is a machine translation (English only).
+  bool get translated => lead.titleTranslated;
 
   factory Story.fromJson(Map<String, dynamic> j) {
     final people = <StoryMember>[];

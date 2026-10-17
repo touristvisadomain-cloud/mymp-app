@@ -9,6 +9,7 @@ import '../i18n.dart';
 import '../models.dart';
 import '../party_logo.dart';
 import '../loading.dart';
+import '../maps/google.dart';
 import '../theme.dart';
 import '../version.dart';
 import '../widgets.dart';
@@ -59,8 +60,8 @@ class _MoreScreenState extends State<MoreScreen> {
           BrandHeader(
             title: t('আরও', 'More'),
             subtitle: t(
-              'দল, তথ্যের সূত্র ও অ্যাপ সম্পর্কে',
-              'Parties, sources and about the app',
+              'নির্বাচন, সংসদ, দল ও অ্যাপ সম্পর্কে',
+              'The election, Parliament, parties and the app',
             ),
           ),
           Expanded(
@@ -77,9 +78,8 @@ class _MoreScreenState extends State<MoreScreen> {
                 const _LanguageCard(),
                 const SizedBox(height: 18),
 
-                const DisclaimerCard(),
-                const SizedBox(height: 18),
-
+                // What a reader comes here for first: the election, the House
+                // and the parties. The sources and the disclaimer are below.
                 const ElectionCard(padding: EdgeInsets.zero),
                 const SizedBox(height: 18),
 
@@ -90,44 +90,73 @@ class _MoreScreenState extends State<MoreScreen> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 10),
-                Container(
-                  clipBehavior: Clip.antiAlias,
-                  decoration: AppDecor.card(),
-                  child: Column(
+                // Tiles rather than a list, so the House's pages are seen:
+                // the statistics across the width, the rest two to a row.
+                _HouseTile(
+                  wide: true,
+                  icon: Icons.bar_chart_rounded,
+                  title: t('পরিসংখ্যান', 'Statistics'),
+                  note: t(
+                    'বয়স, শিক্ষা, পেশা, নারী সদস্য ও অভিজ্ঞতা',
+                    'Age, education, professions, women and experience',
+                  ),
+                  onTap: () => _push(context, const StatisticsScreen()),
+                ),
+                const SizedBox(height: 10),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _row(
-                        context,
-                        Icons.bar_chart_rounded,
-                        t('পরিসংখ্যান', 'Statistics'),
-                        () => _push(context, const StatisticsScreen()),
+                      Expanded(
+                        child: _HouseTile(
+                          icon: Icons.map_outlined,
+                          title: t('সব আসন', 'All seats'),
+                          note: t(
+                            'প্রতিটি আসনের এমপি',
+                            'The MP for every seat',
+                          ),
+                          onTap: () => _push(context, const SeatsScreen()),
+                        ),
                       ),
-                      const Divider(height: 1),
-                      _row(
-                        context,
-                        Icons.map_outlined,
-                        t('সব আসন', 'All seats'),
-                        () => _push(context, const SeatsScreen()),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _HouseTile(
+                          icon: Icons.woman_outlined,
+                          title: t('সংরক্ষিত নারী আসন', 'Reserved seats'),
+                          note: t('৫০টি নারী আসন', '50 seats for women'),
+                          onTap: () => _push(context, const ReservedScreen()),
+                        ),
                       ),
-                      const Divider(height: 1),
-                      _row(
-                        context,
-                        Icons.woman_outlined,
-                        t('সংরক্ষিত নারী আসন', 'Reserved seats for women'),
-                        () => _push(context, const ReservedScreen()),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _HouseTile(
+                          icon: Icons.groups_outlined,
+                          title: t('কমিটি', 'Committees'),
+                          note: t(
+                            'সভাপতি, সদস্য ও দায়িত্ব',
+                            'Chairs, members and duties',
+                          ),
+                          onTap: () => _push(context, const CommitteesScreen()),
+                        ),
                       ),
-                      const Divider(height: 1),
-                      _row(
-                        context,
-                        Icons.groups_outlined,
-                        t('কমিটি', 'Committees'),
-                        () => _push(context, const CommitteesScreen()),
-                      ),
-                      const Divider(height: 1),
-                      _row(
-                        context,
-                        Icons.event_note_outlined,
-                        t('অধিবেশন', 'Sessions'),
-                        () => _push(context, const SessionsScreen()),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _HouseTile(
+                          icon: Icons.event_note_outlined,
+                          title: t('অধিবেশন', 'Sessions'),
+                          note: t(
+                            'বৈঠক ও দিনের কার্যসূচি',
+                            'Sittings and orders of the day',
+                          ),
+                          onTap: () => _push(context, const SessionsScreen()),
+                        ),
                       ),
                     ],
                   ),
@@ -219,6 +248,10 @@ class _MoreScreenState extends State<MoreScreen> {
                 ),
 
                 const SizedBox(height: 18),
+                // Who runs the app, and where every figure comes from.
+                const DisclaimerCard(),
+
+                const SizedBox(height: 18),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -235,13 +268,45 @@ class _MoreScreenState extends State<MoreScreen> {
                       const SizedBox(height: 8),
                       Text(
                         t(
-                          'কোনো অ্যাকাউন্ট লাগে না, কিছু জমা নেওয়া হয় না। শুধু সংসদ সদস্যদের তালিকাটি ফোনেই রেখে দেওয়া হয়, '
+                          'কোনো অ্যাকাউন্ট লাগে না, অ্যাপ নিজে কিছু জমা নেয় না। শুধু সংসদ সদস্যদের তালিকাটি ফোনেই রেখে দেওয়া হয়, '
                               'যাতে নেটওয়ার্ক না থাকলেও অ্যাপ খোলে। সব তথ্য mymp.bd থেকে আসে।',
-                          'No account is needed and nothing is collected. Only the list of Members of Parliament is kept '
-                              'on the phone, so that the app opens even with no network. All information comes from mymp.bd.',
+                          'No account is needed, and the app itself collects nothing. Only the list of Members of Parliament '
+                              'is kept on the phone, so that the app opens even with no network. All information comes from mymp.bd.',
                         ),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
+                      // The one thing that leaves the phone for anyone but
+                      // mymp.bd (owner, 2026-10-17), said where the reader
+                      // looks for it.
+                      if (GoogleMaps.enabled) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          t(
+                            'মানচিত্রগুলো Google Maps-এর। মানচিত্র দেখানোর জন্য Google আপনার ফোন থেকে সাধারণ কারিগরি তথ্য পায় '
+                                '(যেমন IP ঠিকানা, ফোন ও অ্যাপের ধরন), যা Google-এর গোপনীয়তা নীতির অধীন। অ্যাপ আপনার অবস্থান জানতে চায় না।',
+                            'The maps are Google Maps. To show them, Google receives the usual technical data from your phone '
+                                '(such as its IP address and the kind of phone and app), under Google’s privacy policy. '
+                                'The app does not ask where you are.',
+                          ),
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: TextButton(
+                            onPressed: () => _open(kGooglePrivacyUrl),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              foregroundColor: AppColors.brand,
+                            ),
+                            child: Text(
+                              t(
+                                'Google-এর গোপনীয়তা নীতি',
+                                'Google’s privacy policy',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -383,3 +448,103 @@ class _PartyRow extends StatelessWidget {
 /// Opens one of the app's own screens.
 void _push(BuildContext context, Widget screen) =>
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+
+/// One of the House's pages as a tile: an icon in a green circle, the name,
+/// and a line on what it holds. The wide one sits on the brand's soft green.
+class _HouseTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String note;
+  final VoidCallback onTap;
+  final bool wide;
+  const _HouseTile({
+    required this.icon,
+    required this.title,
+    required this.note,
+    required this.onTap,
+    this.wide = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const font = 'NotoSansBengali';
+    final mark = Container(
+      width: wide ? 46 : 40,
+      height: wide ? 46 : 40,
+      decoration: BoxDecoration(
+        color: wide ? AppColors.brand : AppColors.brandSoft,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        icon,
+        size: wide ? 24 : 21,
+        color: wide ? Colors.white : AppColors.brand,
+      ),
+    );
+    final words = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontFamily: font,
+            fontSize: wide ? 17 : 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.ink,
+            height: 1.3,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          note,
+          style: const TextStyle(
+            fontFamily: font,
+            fontSize: 12.5,
+            color: AppColors.muted,
+            height: 1.4,
+          ),
+        ),
+      ],
+    );
+    return Semantics(
+      button: true,
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: wide
+            ? BoxDecoration(
+                color: AppColors.brandSoft,
+                border: Border.all(color: AppColors.brandRing),
+                borderRadius: BorderRadius.circular(AppSizes.radiusCard),
+              )
+            : AppDecor.card(),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: wide
+                  ? Row(
+                      children: [
+                        mark,
+                        const SizedBox(width: 12),
+                        Expanded(child: words),
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 20,
+                          color: AppColors.brand,
+                        ),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [mark, const SizedBox(height: 10), words],
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

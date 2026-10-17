@@ -13,6 +13,7 @@ import '../search.dart';
 import '../disclaimer.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'house_overview.dart';
 import 'leaders_strip.dart';
 import 'member_screen.dart';
 import 'seat_screen.dart';
@@ -21,9 +22,12 @@ import 'seat_screen.dart';
 /// seat and by district, filterable by party, district and kind of seat
 /// (elected or reserved, as the website's list has it). A query naming a
 /// place, an upazila, a union or a city ward, in Bangla or English, puts that
-/// place's member first, under "আপনার এলাকার এমপি".
+/// place's member first, under "আপনার এলাকার এমপি". Above the list, as on
+/// the website's home page: four facts and the House's composition.
 class MembersScreen extends StatefulWidget {
-  const MembersScreen({super.key});
+  /// What the cabinet fact does: the shell switches to the cabinet tab.
+  final VoidCallback? onShowCabinet;
+  const MembersScreen({super.key, this.onShowCabinet});
 
   @override
   State<MembersScreen> createState() => _MembersScreenState();
@@ -243,9 +247,16 @@ class _MembersScreenState extends State<MembersScreen>
               controller: _scroll,
               slivers: [
                 SliverToBoxAdapter(child: _header(data)),
-                // The House's leaders and the election figures first; a reader
-                // searching or filtering wants the list, so they step aside.
+                // The House at a glance, its leaders and the election figures
+                // first; a reader searching or filtering wants the list, so
+                // they step aside.
                 if (!filtered) ...[
+                  SliverToBoxAdapter(
+                    child: HouseOverview(
+                      data: data,
+                      onShowCabinet: widget.onShowCabinet,
+                    ),
+                  ),
                   SliverToBoxAdapter(child: LeadersStrip(data: data)),
                   const SliverToBoxAdapter(child: ElectionCard()),
                 ],

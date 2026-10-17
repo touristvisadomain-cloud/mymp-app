@@ -335,6 +335,64 @@ class MemberSearch {
   }
 }
 
+/// The member search's matching for any list: each item's words in weighted
+/// fields, in either script and either digits, by spelling or by sound.
+/// Every typed word must fit some word of the item; the best come first.
+/// The election map finds its seats and districts with it.
+class TextSearch<T> {
+  final List<(T, List<_Field>)> _index;
+
+  TextSearch(Iterable<T> items, List<(String, double)> Function(T) fields)
+    : _index = [
+        for (final item in items)
+          (item, [for (final (s, w) in fields(item)) _Field(_words(s), w)]),
+      ];
+
+  /// Matches for [query], best first; ties keep the items' order. Fewer than
+  /// two letters find nothing.
+  List<T> search(String query) {
+    if (query.trim().length < 2) return const [];
+    var words = _words(query);
+    final meaningful = words
+        .where((w) => !_titleTexts.contains(w.text))
+        .toList();
+    if (meaningful.isNotEmpty) words = meaningful;
+    if (words.isEmpty) return const [];
+
+    final scored = <(T, double, int)>[];
+    for (final (i, (item, fields)) in _index.indexed) {
+      var total = 0.0;
+      var all = true;
+      for (final q in words) {
+        var best = 0.0;
+        for (final f in fields) {
+          for (final w in f.words) {
+            final s = _fit(q, w) * f.weight;
+            if (s > best) best = s;
+          }
+        }
+        if (best == 0) {
+          all = false;
+          break;
+        }
+        total += best;
+      }
+      if (all) scored.add((item, total, i));
+    }
+    if (scored.isEmpty) return const [];
+    scored.sort((a, b) {
+      final byScore = b.$2.compareTo(a.$2);
+      return byScore != 0 ? byScore : a.$3.compareTo(b.$3);
+    });
+    // As with members: a sound-alike does not bury what was typed exactly.
+    final top = scored.first.$2;
+    return [
+      for (final s in scored)
+        if (s.$2 >= top * 0.5) s.$1,
+    ];
+  }
+}
+
 // ---------------------------------------------------------------- places
 
 /// A territorial seat as the place finder reads it: the Bangla names and

@@ -160,8 +160,24 @@ class CabinetData {
   );
 }
 
-Future<CabinetData> fetchCabinet() async =>
-    CabinetData.fromJson(await Api.instance.getJson('/api/app/v1/cabinet'));
+/// The cabinet list. The members tab's cabinet tile and the cabinet tab both
+/// ask for it at launch; while one request is on its way the other shares
+/// it. Nothing is kept once it lands, so a refresh always fetches.
+Future<CabinetData> fetchCabinet() {
+  final lang = appLang.value;
+  final held = _cabinetLoading;
+  if (held != null && held.lang == lang) return held.future;
+  final future = Api.instance
+      .getJson('/api/app/v1/cabinet')
+      .then(CabinetData.fromJson);
+  _cabinetLoading = (lang: lang, future: future);
+  future.whenComplete(() {
+    if (identical(_cabinetLoading?.future, future)) _cabinetLoading = null;
+  }).ignore();
+  return future;
+}
+
+({Lang lang, Future<CabinetData> future})? _cabinetLoading;
 
 /// A current post of someone from outside Parliament.
 class AdviserPostRow {

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'disclaimer.dart';
 import 'i18n.dart';
+import 'maps/google.dart';
 import 'screens/cabinet_screen.dart';
 import 'screens/district_screen.dart';
 import 'screens/election_parts.dart';
@@ -20,6 +21,9 @@ Future<void> main() async {
   // The reader's language before the first frame, so an English reader never
   // sees a flash of Bangla.
   await appLang.load();
+  // Whether this build's maps are Google's (it carries a key) or drawn by
+  // the app; asked once, so a map never changes kind on screen.
+  await GoogleMaps.init();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -35,11 +39,13 @@ Future<void> main() async {
 /// Where a member's page links to: the app's own party, seat and district
 /// screens (the page leaves a link out while its hook is unset).
 void _wireLinks() {
-  void open(BuildContext context, Widget screen) =>
-      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+  void open(BuildContext context, Widget screen) => Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => screen));
   MemberLinks.party = (context, slug) => open(context, PartyScreen.slug(slug));
   MemberLinks.seat = (context, slug) => open(context, SeatScreen(slug: slug));
-  MemberLinks.district = (context, slug) => open(context, DistrictScreen(slug: slug));
+  MemberLinks.district = (context, slug) =>
+      open(context, DistrictScreen(slug: slug));
   // And the election page's.
   ElectionLinks.seat = MemberLinks.seat;
   ElectionLinks.district = MemberLinks.district;
@@ -101,9 +107,10 @@ class _ShellState extends State<Shell> {
 
   // Held in an IndexedStack, so a reader who scrolled the member list halfway
   // down and went to look at the news comes back to where they were.
-  // The cabinet's "all members" chip switches to the members tab.
+  // The cabinet's "all members" chip switches to the members tab, and the
+  // members tab's cabinet fact to the cabinet.
   late final _screens = [
-    const MembersScreen(),
+    MembersScreen(onShowCabinet: () => setState(() => _index = 2)),
     const NewsScreen(),
     CabinetScreen(onShowMembers: () => setState(() => _index = 0)),
     const MoreScreen(),

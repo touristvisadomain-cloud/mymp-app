@@ -1,8 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!--
       The only permission the app asks for. It reads mymp.bd and opens links in
-      the browser; it has no account, no location, no contacts, no storage, and
-      the Play data-safety answer is "no data collected".
+      the browser; it has no account, no location, no contacts, no storage.
+      Its maps are Google Maps when the build has a key (owner, 2026-10-17):
+      Google's map service then receives the usual technical data to show
+      them. No location permission is asked for, and none may be added.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
@@ -32,6 +34,12 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- The Google Maps key, from MAPS_API_KEY (android/app/build.gradle.kts).
+             Empty in a build without one: the app then draws its own maps and
+             never opens a Google map (MainActivity, lib/maps/google.dart). -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

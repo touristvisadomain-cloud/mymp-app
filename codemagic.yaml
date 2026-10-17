@@ -19,6 +19,16 @@
 # added under Settings > Integrations) and the distribution certificate and App Store profile
 # for bd.mymp.app under Code signing identities.
 #
+# The Google Maps keys are never in this repository either. Add them once in
+# Codemagic under the app's Environment variables, in a group named
+# google_maps, both marked Secret:
+#   MAPS_API_KEY      the Android key (android/app/build.gradle.kts reads it)
+#   MAPS_API_KEY_IOS  the iOS key, written into ios/Flutter/MapsKey.xcconfig
+# A release without its key stops, rather than quietly shipping the drawn
+# maps. The Android key must allow the upload key's SHA-1 (the APK below) and
+# Play's app signing key's SHA-1 (the app from Play): both are on Play Console
+# > Test and release > App integrity.
+#
 # Play and Apple both need a higher build number on every upload: raise the
 # number after the + in pubspec.yaml (version: 1.2.4+7) before a release.
 
@@ -55,6 +65,8 @@ workflows:
       flutter: 3.44.8
       android_signing:
         - mymp_upload
+      groups:
+        - google_maps
       vars:
         # android/app/build.gradle.kts fails the build without the upload key
         # instead of quietly signing with the debug key.
@@ -72,6 +84,12 @@ workflows:
         script: flutter analyze --no-fatal-infos
       - name: Test
         script: flutter test
+      - name: Check the Maps key is here
+        script: |
+          if [ -z "$MAPS_API_KEY" ]; then
+            echo "No MAPS_API_KEY: add it to the google_maps group (see the top of codemagic.yaml)."
+            exit 1
+          fi
       - name: Build app bundle (for Play)
         script: flutter build appbundle --release
       - name: Build APK (for phones)
@@ -112,6 +130,8 @@ workflows:
       flutter: 3.44.8
       xcode: latest
       cocoapods: default
+      groups:
+        - google_maps
       ios_signing:
         distribution_type: app_store
         bundle_identifier: bd.mymp.app
@@ -128,6 +148,14 @@ workflows:
         script: flutter analyze --no-fatal-infos
       - name: Test
         script: flutter test
+      - name: Maps key
+        # ios/Flutter/Release.xcconfig includes this file when it is there.
+        script: |
+          if [ -z "$MAPS_API_KEY_IOS" ]; then
+            echo "No MAPS_API_KEY_IOS: add it to the google_maps group (see the top of codemagic.yaml)."
+            exit 1
+          fi
+          printf 'MAPS_API_KEY=%s\n' "$MAPS_API_KEY_IOS" > ios/Flutter/MapsKey.xcconfig
       - name: Use the App Store profile
         # Points the Xcode project at the profile ios_signing fetched above,
         # and writes the export options flutter build ipa reads.

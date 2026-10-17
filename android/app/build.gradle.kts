@@ -25,6 +25,18 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // The Google Maps key (owner, 2026-10-17), into the manifest's
+        // com.google.android.geo.API_KEY. From MAPS_API_KEY in
+        // android/local.properties (never committed) or the environment
+        // variable MAPS_API_KEY (Codemagic). With neither it is empty, and
+        // the app draws its own maps: MainActivity tells the Dart side
+        // whether there is a key (lib/maps/google.dart).
+        val localMaps = rootProject.file("local.properties").takeIf { it.exists() }
+            ?.let { f -> Properties().apply { FileInputStream(f).use { load(it) } } }
+            ?.getProperty("MAPS_API_KEY")
+        val mapsKey = (localMaps?.takeIf { it.isNotBlank() } ?: System.getenv("MAPS_API_KEY") ?: "").trim()
+        manifestPlaceholders["MAPS_API_KEY"] = mapsKey
     }
 
     /*
