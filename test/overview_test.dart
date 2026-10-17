@@ -431,12 +431,14 @@ void main() {
               await t.pageBack();
               await _settle(t);
 
-              final speaker = find.textContaining(
-                tr('স্পিকার: ', 'Speaker: '),
-                findRichText: true,
+              // The Speaker's line was taken off the card (owner, 2026-10-17).
+              expect(
+                find.textContaining(
+                  tr('স্পিকার: ', 'Speaker: '),
+                  findRichText: true,
+                ),
+                findsNothing,
               );
-              await _tapOn(t, speaker);
-              expect(find.byType(MemberScreen), findsOneWidget);
             },
           );
           expect(problems, isEmpty);

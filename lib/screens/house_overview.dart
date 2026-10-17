@@ -589,14 +589,6 @@ class HouseCompositionCard extends StatelessWidget {
               total: m.total,
             ),
           if (m.rest.isNotEmpty) _OtherParties(makeup: m),
-          if (m.speaker != null) ...[
-            const Divider(height: 1),
-            const SizedBox(height: 10),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: _SpeakerChip(member: m.speaker!),
-            ),
-          ],
         ],
       ),
     );
@@ -1031,62 +1023,6 @@ class _OtherPartiesState extends State<_OtherParties> {
             ),
           ),
       ],
-    );
-  }
-}
-
-/// The Speaker, a chip that opens their page.
-class _SpeakerChip extends StatelessWidget {
-  final MemberBrief member;
-  const _SpeakerChip({required this.member});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      // Rounded rather than a pill: a long name may take a second line.
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: const BorderSide(color: AppColors.rule),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => MemberScreen(member: member))),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 6, 14, 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.gavel_rounded, size: 16, color: AppColors.brand),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '${t('স্পিকার', 'Speaker')}: ',
-                        style: const TextStyle(color: AppColors.muted),
-                      ),
-                      TextSpan(text: member.nameBn),
-                    ],
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: _font,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.ink,
-                    height: 1.35,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
