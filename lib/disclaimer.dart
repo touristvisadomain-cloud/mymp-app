@@ -112,7 +112,10 @@ String get kNewsLine => t(
       'অ্যাপ নিজে কোনো সংবাদ লেখে না।',
   'In the News section, every headline is shown with the name of its news outlet; tapping it opens the story '
       'on that outlet’s own site. Headlines come from news outlets in Bangladesh and abroad; videos come only '
-      'from these outlets’ own YouTube channels. The app itself writes no news.',
+      'from these outlets’ own YouTube channels. The app itself writes no news. On the English screens the '
+      'headlines are translated automatically from Bangla by Google Translate (on the website’s server; the app '
+      'sends nothing), so they may read awkwardly; a headline not yet translated is shown in Bangla, and opening '
+      'a story shows the original.',
 );
 
 TextStyle _bn(double size, FontWeight weight, Color color, {double? height}) =>

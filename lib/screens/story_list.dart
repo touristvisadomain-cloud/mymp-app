@@ -37,6 +37,7 @@ class StoryList extends StatelessWidget {
       future: future,
       onRetry: onRetry,
       builder: (context, stories) {
+        final machine = t.en && stories.any((s) => s.translated);
         final list = ListView.separated(
           // Clear of the system navigation bar on a pushed page; on a tab the
           // app's own bar has already taken that inset.
@@ -49,11 +50,18 @@ class StoryList extends StatelessWidget {
           itemCount:
               stories.length +
               (header != null ? 1 : 0) +
-              (stories.isEmpty ? 1 : 0),
+              (stories.isEmpty ? 1 : 0) +
+              (machine ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(height: 10),
           itemBuilder: (context, i) {
             if (header != null && i == 0) return header!;
             final index = i - (header != null ? 1 : 0);
+            if (machine && index == stories.length) {
+              return const MachineNote(
+                show: true,
+                padding: EdgeInsets.only(top: 4),
+              );
+            }
             if (stories.isEmpty) {
               return Padding(
                 padding: const EdgeInsets.only(top: 40),
@@ -75,6 +83,58 @@ class StoryList extends StatelessWidget {
                 child: list,
               );
       },
+    );
+  }
+}
+
+/// "Headlines translated automatically from Bangla by Google Translate…": the
+/// quiet line under a list of headlines, as the website's MachineNote. English
+/// only, and only where the list shows a machine translation; [show] says
+/// whether it does.
+class MachineNote extends StatelessWidget {
+  final bool show;
+  final EdgeInsetsGeometry padding;
+  const MachineNote({
+    super.key,
+    required this.show,
+    this.padding = EdgeInsets.zero,
+  });
+
+  /// The website's words (src/lib/headline.ts, MACHINE_NOTE).
+  static const text =
+      'Headlines translated automatically from Bangla by Google Translate. '
+      'Open a story to read the original.';
+
+  @override
+  Widget build(BuildContext context) {
+    if (!show || !t.en) return const SizedBox.shrink();
+    return Padding(
+      padding: padding,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.translate_rounded,
+              size: 15,
+              color: AppColors.muted,
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontFamily: 'NotoSansBengali',
+                fontSize: 12.5,
+                color: AppColors.muted,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
