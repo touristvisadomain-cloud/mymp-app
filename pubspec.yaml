@@ -12,18 +12,24 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Deliberately few, and none that collect anything: the Play data-safety
-  # answer is "no data collected", and it should stay true by construction.
+  # Deliberately few. None collects anything for the app itself. The one
+  # exception the owner chose (2026-10-17) is Google Maps: Google's map
+  # service receives the usual technical data from the phone to show the maps
+  # (lib/maps/google.dart, the README). No location, no analytics, and no
+  # other dependency that collects data.
   http: ^1.5.0
   shared_preferences: ^2.5.3
   cached_network_image: ^3.4.1
   url_launcher: ^6.3.2
   share_plus: ^12.0.0
+  google_maps_flutter: ^2.18.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # A fake map platform for the tests of the Google path (test/maps_test.dart).
+  google_maps_flutter_platform_interface: ^2.17.0
   flutter_launcher_icons: ^0.14.4
 
 flutter:

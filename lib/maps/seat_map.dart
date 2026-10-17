@@ -1,10 +1,14 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../data/member.dart';
 import '../i18n.dart';
 import '../theme.dart';
+import 'google.dart';
 
 /// A constituency on its district's map, as the website's SeatMap draws it
 /// (src/components/SeatMap.tsx in the mymp repo), without the street map
@@ -16,6 +20,11 @@ import '../theme.dart';
 /// district), a tap on a place says what it is and which seat it lies in, and
 /// "বড় করে দেখুন" opens it full screen, where nothing else claims the gestures.
 /// There is no "Am I in this seat?" button: the app asks for no location.
+///
+/// With a Google Maps key in the build (lib/maps/google.dart) the same places
+/// are laid over Google's road map, the street map the website shows; the
+/// names are then Google's, and a tap still says what a place is. Without
+/// one, the map is drawn by the app, as before.
 ///
 /// The boundaries are the website's own file, `/geo/<district>.json`, built
 /// from OpenStreetMap's upazilas (ODbL), OCHA's city corporations (CC BY-IGO)
@@ -417,6 +426,9 @@ class _MapView extends StatefulWidget {
 
 class _MapViewState extends State<_MapView> {
   final _zoom = TransformationController();
+  GoogleMapController? _gmap;
+  Size _gSize = Size.zero;
+  CameraPosition? _gFirst;
   _Projected? _shape;
   Size? _fitted;
   GeoPlace? _picked;
@@ -471,6 +483,113 @@ class _MapViewState extends State<_MapView> {
 
   static const _maxScale = 40.0;
 
+  /// The places the map opens on, as in [_fit].
+  Iterable<GeoPlace> get _focus {
+    final mine = widget.places.where((p) => p.seats[widget.seatSlug] != null);
+    final whole = mine.where((p) => p.seats[widget.seatSlug] == SeatPart.whole);
+    return whole.isNotEmpty ? whole : (mine.isNotEmpty ? mine : widget.places);
+  }
+
+  CameraPosition _gFit(Size size) {
+    final b = boundsOf(
+      _focus.expand((p) => p.polygons).expand((poly) => poly.first),
+    );
+    return b == null
+        ? fitCamera(GoogleMaps.bangladesh, size)
+        : fitCamera(b, size, pad: 20, maxZoom: 15);
+  }
+
+  void _tapPlace(GeoPlace f) =>
+      setState(() => _picked = identical(f, _picked) ? null : f);
+
+  /// The places over Google's road map: the seat's own solid or dashed in
+  /// the party's colour, the district's others faint and dashed.
+  Widget _google(Size size) {
+    _gSize = size;
+    final first = _gFirst ??= _gFit(size);
+    final polygons = <Polygon>{};
+    final dashes = <Polyline>{};
+    LatLng ll((double, double) p) => LatLng(p.$2, p.$1);
+    for (final (i, f) in widget.places.indexed) {
+      final s = f.seats[widget.seatSlug];
+      final on = identical(f, _picked);
+      final rank = switch (s) {
+        SeatPart.whole => 4,
+        SeatPart.part => 2,
+        null => 0,
+      };
+      final colour = s == null ? _grey : widget.color;
+      for (final (j, poly) in f.polygons.indexed) {
+        polygons.add(
+          Polygon(
+            polygonId: PolygonId('$i/$j'),
+            points: [for (final p in poly.first) ll(p)],
+            holes: [
+              for (final hole in poly.skip(1)) [for (final p in hole) ll(p)],
+            ],
+            fillColor: switch (s) {
+              SeatPart.whole => colour.withValues(alpha: 0.22),
+              SeatPart.part => colour.withValues(alpha: 0.1),
+              null => colour.withValues(alpha: 0.05),
+            },
+            strokeColor: on ? AppColors.ink : colour,
+            strokeWidth: on ? 3 : (s == SeatPart.whole ? 2 : 0),
+            // A ward over its city, the seat's own places over the rest.
+            zIndex: rank + (f.kind == 'ward' ? 1 : 0) + (on ? 10 : 0),
+            consumeTapEvents: true,
+            onTap: () => _tapPlace(f),
+          ),
+        );
+        if (s != SeatPart.whole && !on) {
+          dashes.add(
+            Polyline(
+              polylineId: PolylineId('$i/$j'),
+              points: [for (final p in poly.first) ll(p), ll(poly.first.first)],
+              color: s == null ? colour.withValues(alpha: 0.75) : colour,
+              width: s == null ? 1 : 2,
+              patterns: [PatternItem.dash(8), PatternItem.gap(6)],
+              zIndex: rank + 1,
+            ),
+          );
+        }
+      }
+    }
+    return GoogleMap(
+      initialCameraPosition: first,
+      onMapCreated: (c) => _gmap = c,
+      // On the page one finger scrolls the page and a tap names a place; in
+      // the large view, where the page does not scroll, the map takes all.
+      gestureRecognizers: widget.large
+          ? GoogleMaps.greedy
+          : const <Factory<OneSequenceGestureRecognizer>>{},
+      zoomControlsEnabled: false,
+      myLocationEnabled: false,
+      myLocationButtonEnabled: false,
+      mapToolbarEnabled: false,
+      compassEnabled: false,
+      rotateGesturesEnabled: false,
+      tiltGesturesEnabled: false,
+      indoorViewEnabled: false,
+      buildingsEnabled: false,
+      trafficEnabled: false,
+      polygons: polygons,
+      polylines: dashes,
+      onTap: (_) {
+        if (_picked != null) setState(() => _picked = null);
+      },
+    );
+  }
+
+  void _gRecentre() {
+    final m = _gmap;
+    if (m != null && !_gSize.isEmpty) {
+      m
+          .animateCamera(CameraUpdate.newCameraPosition(_gFit(_gSize)))
+          .catchError((_) {});
+    }
+    setState(() => _picked = null);
+  }
+
   void _tap(_Projected p, Offset at) {
     // A ward before the city or upazila around it; the smallest place wins.
     GeoPlace? hit;
@@ -515,6 +634,27 @@ class _MapViewState extends State<_MapView> {
           child: LayoutBuilder(
             builder: (context, box) {
               final size = Size(box.maxWidth, box.maxHeight);
+              if (GoogleMaps.enabled) {
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Semantics(
+                        label: t(
+                          '${widget.title} মানচিত্র',
+                          'Map of ${widget.title}',
+                        ),
+                        child: _google(size),
+                      ),
+                    ),
+                    // Above Google's logo, which must stay in sight.
+                    Positioned(
+                      right: 8,
+                      bottom: 28,
+                      child: _RecentreButton(onPressed: _gRecentre),
+                    ),
+                  ],
+                );
+              }
               final p = _project(size);
               if (_fitted != size) {
                 _fitted = size;
@@ -559,23 +699,11 @@ class _MapViewState extends State<_MapView> {
                     Positioned(
                       right: 8,
                       bottom: 8,
-                      child: Material(
-                        color: AppColors.surface,
-                        shape: const CircleBorder(),
-                        elevation: 1,
-                        child: IconButton(
-                          tooltip: t('আসনে ফিরুন', 'Back to the seat'),
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(
-                            Icons.center_focus_strong_rounded,
-                            size: 20,
-                            color: AppColors.inkSoft,
-                          ),
-                          onPressed: () {
-                            _fit(p);
-                            setState(() => _picked = null);
-                          },
-                        ),
+                      child: _RecentreButton(
+                        onPressed: () {
+                          _fit(p);
+                          setState(() => _picked = null);
+                        },
                       ),
                     ),
                   ],
@@ -587,6 +715,29 @@ class _MapViewState extends State<_MapView> {
       ],
     );
   }
+}
+
+/// Back to the view the map opened on.
+class _RecentreButton extends StatelessWidget {
+  final VoidCallback onPressed;
+  const _RecentreButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: AppColors.surface,
+    shape: const CircleBorder(),
+    elevation: 1,
+    child: IconButton(
+      tooltip: t('আসনে ফিরুন', 'Back to the seat'),
+      visualDensity: VisualDensity.compact,
+      icon: const Icon(
+        Icons.center_focus_strong_rounded,
+        size: 20,
+        color: AppColors.inkSoft,
+      ),
+      onPressed: onPressed,
+    ),
+  );
 }
 
 /// The places as paths in the box's coordinates, with their bounds, label

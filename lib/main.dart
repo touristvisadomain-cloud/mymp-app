@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'disclaimer.dart';
 import 'i18n.dart';
+import 'maps/google.dart';
 import 'screens/cabinet_screen.dart';
 import 'screens/district_screen.dart';
 import 'screens/election_parts.dart';
@@ -20,6 +21,9 @@ Future<void> main() async {
   // The reader's language before the first frame, so an English reader never
   // sees a flash of Bangla.
   await appLang.load();
+  // Whether this build's maps are Google's (it carries a key) or drawn by
+  // the app; asked once, so a map never changes kind on screen.
+  await GoogleMaps.init();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

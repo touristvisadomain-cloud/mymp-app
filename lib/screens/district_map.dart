@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../data/member.dart';
 import '../i18n.dart';
+import '../maps/google.dart';
 import '../theme.dart';
 
 /// A district's seats on its map, as the website's district page draws it
@@ -13,6 +15,9 @@ import '../theme.dart';
 /// the website's own boundary file (`/geo/<district>.json`), with no street
 /// map beneath; read through lib/data/member.dart's [fetchDistrictGeo], the
 /// same file the seat map reads.
+///
+/// With a Google Maps key in the build (lib/maps/google.dart) the same
+/// places are laid over Google's road map; without one, the app draws them.
 class DistrictMap extends StatefulWidget {
   final String districtSlug;
 
@@ -101,7 +106,10 @@ class _DistrictMapState extends State<DistrictMap> {
   @override
   void didUpdateWidget(DistrictMap old) {
     super.didUpdateWidget(old);
-    if (old.districtSlug != widget.districtSlug) _future = _load();
+    if (old.districtSlug != widget.districtSlug) {
+      _future = _load();
+      _gFirst = null;
+    }
   }
 
   @override
@@ -147,6 +155,13 @@ class _DistrictMapState extends State<DistrictMap> {
               final aspect = data.bounds.height / data.bounds.width;
               final h = (w * aspect).clamp(220.0, 440.0);
               final size = Size(w, h);
+              if (GoogleMaps.enabled) {
+                return SizedBox(
+                  width: w,
+                  height: h,
+                  child: _google(data, size),
+                );
+              }
               return GestureDetector(
                 onTapUp: (e) {
                   final hit = _hit(data, size, e.localPosition);
@@ -219,6 +234,81 @@ class _DistrictMapState extends State<DistrictMap> {
     );
   }
 
+  /// A place's seat, as [_hit] picks it: the seat holding it whole, or the
+  /// first of those sharing it.
+  static String? _seatOf(GeoPlace p) {
+    if (p.seats.isEmpty) return null;
+    return p.seats.entries
+            .where((e) => e.value == SeatPart.whole)
+            .map((e) => e.key)
+            .firstOrNull ??
+        p.seats.keys.first;
+  }
+
+  CameraPosition? _gFirst;
+
+  /// The district over Google's road map, each place in its seat's colour.
+  /// One finger on it scrolls the page; a tap opens the seat.
+  Widget _google(_Projected data, Size size) {
+    final places = [for (final s in data.shapes) s.place];
+    final first = _gFirst ??= () {
+      final b = boundsOf(
+        places.expand((p) => p.polygons).expand((poly) => poly.first),
+      );
+      return b == null
+          ? fitCamera(GoogleMaps.bangladesh, size)
+          : fitCamera(b, size, pad: 10);
+    }();
+    LatLng ll((double, double) p) => LatLng(p.$2, p.$1);
+    final polygons = <Polygon>{};
+    for (final (i, place) in places.indexed) {
+      final seat = _seatOf(place);
+      Color fill;
+      if (seat == null) {
+        fill = AppColors.muted.withValues(alpha: 0.12);
+      } else {
+        final whole =
+            place.seats.length == 1 &&
+            place.seats.values.first == SeatPart.whole;
+        final c = widget.colours[place.seats.keys.first] ?? AppColors.muted;
+        fill = c.withValues(alpha: whole ? 0.6 : 0.35);
+      }
+      for (final (j, poly) in place.polygons.indexed) {
+        polygons.add(
+          Polygon(
+            polygonId: PolygonId('$i/$j'),
+            points: [for (final p in poly.first) ll(p)],
+            holes: [
+              for (final hole in poly.skip(1)) [for (final p in hole) ll(p)],
+            ],
+            fillColor: fill,
+            strokeColor: Colors.white,
+            strokeWidth: 1,
+            // Wards over their cities, as in the drawing.
+            zIndex: i,
+            consumeTapEvents: seat != null,
+            onTap: seat == null ? null : () => widget.onSeat(seat),
+          ),
+        );
+      }
+    }
+    return GoogleMap(
+      key: ValueKey(widget.districtSlug),
+      initialCameraPosition: first,
+      zoomControlsEnabled: false,
+      myLocationEnabled: false,
+      myLocationButtonEnabled: false,
+      mapToolbarEnabled: false,
+      compassEnabled: false,
+      rotateGesturesEnabled: false,
+      tiltGesturesEnabled: false,
+      indoorViewEnabled: false,
+      buildingsEnabled: false,
+      trafficEnabled: false,
+      polygons: polygons,
+    );
+  }
+
   /// The seat of the place under a tap: the topmost place there that names
   /// a seat; a shared place opens the seat that holds the most of it.
   String? _hit(_Projected data, Size size, Offset at) {
@@ -226,11 +316,7 @@ class _DistrictMapState extends State<DistrictMap> {
     final p = (at - f.offset) / f.scale;
     for (final s in data.shapes.reversed) {
       if (s.place.seats.isEmpty || !s.path.contains(p)) continue;
-      final whole = s.place.seats.entries
-          .where((e) => e.value == SeatPart.whole)
-          .map((e) => e.key)
-          .firstOrNull;
-      return whole ?? s.place.seats.keys.first;
+      return _seatOf(s.place);
     }
     return null;
   }

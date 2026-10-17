@@ -1,1 +1,6 @@
 #include "Generated.xcconfig"
+
+// The Google Maps key (lib/maps/google.dart): MAPS_API_KEY=... in
+// ios/Flutter/MapsKey.xcconfig, which is never committed. Without it the
+// key is empty and the app draws its own maps.
+#include? "MapsKey.xcconfig"

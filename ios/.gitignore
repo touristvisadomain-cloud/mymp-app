@@ -32,3 +32,6 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# The Google Maps key for iOS builds (MAPS_API_KEY=...), never committed.
+Flutter/MapsKey.xcconfig

@@ -10,10 +10,14 @@
 /// - জেলার রং: each district in the colour of the party holding most of its
 ///   seats, two colours where it is a tie; a tap lists the district's seats.
 ///
-/// No tiles, no map service: the outlines are the website's own
-/// /geo/overview.json, painted with a CustomPainter inside an
-/// InteractiveViewer. The party symbols (assets/party) are drawn into one
-/// small disc image per party, once, and every seat reuses it.
+/// With a Google Maps key in the build (lib/maps/google.dart), the map is
+/// Google's road map, as on the website, with the districts, the seats and
+/// the picked seat's area laid over it (election_map_google.dart). Without
+/// one (a build with no key, the web build, the tests) it is drawn by the
+/// app: the outlines of the website's own /geo/overview.json, painted with a
+/// CustomPainter inside an InteractiveViewer. Either way the geometry is the
+/// same, and the party symbols (assets/party) are drawn into one small disc
+/// image per party, once, and every seat reuses it.
 library;
 
 import 'dart:async';
@@ -22,6 +26,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../api.dart';
 import '../data/election.dart';
@@ -31,6 +36,9 @@ import '../party_logo.dart';
 import '../search.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'google.dart';
+
+part 'election_map_google.dart';
 
 const _font = 'NotoSansBengali';
 
@@ -223,6 +231,11 @@ class _ElectionMapState extends State<ElectionMap>
   /// The drawing's geometry for the box it was last laid out in.
   _Sheet? _sheet;
 
+  /// Google's map instead of the drawing, when the build has a key; settled
+  /// once, so a map never changes kind under the reader.
+  final bool _google = GoogleMaps.enabled;
+  final _gKey = GlobalKey<_GoogleBoxState>();
+
   @override
   void initState() {
     super.initState();
@@ -328,6 +341,11 @@ class _ElectionMapState extends State<ElectionMap>
     // Without its area (the district's file missing, or no signal), the view
     // goes to the seat's point.
     void toPoint() {
+      if (_google) {
+        final at = _geo?.seats[s.slug];
+        if (at != null) _gKey.currentState?.toPoint(at);
+        return;
+      }
       final at = _sheet?.seat(s.slug);
       if (at != null) {
         _zoomTo(Rect.fromCenter(center: at, width: 50, height: 50));
@@ -336,6 +354,12 @@ class _ElectionMapState extends State<ElectionMap>
 
     fetchSeatAreas(s.districtSlug, s.slug).then((areas) {
       if (!mounted || _picked?.slug != s.slug) return;
+      if (_google) {
+        if (areas.isEmpty) return toPoint();
+        setState(() => _areas = areas);
+        _gKey.currentState?.frame(areas);
+        return;
+      }
       final sheet = _sheet;
       if (areas.isEmpty || sheet == null) return toPoint();
       setState(() => _areas = areas);
@@ -426,6 +450,7 @@ class _ElectionMapState extends State<ElectionMap>
   }
 
   void _zoomBy(double f) {
+    if (_google) return _gKey.currentState?.zoomBy(f);
     final sheet = _sheet;
     if (sheet == null) return;
     final box = sheet.size;
@@ -439,6 +464,7 @@ class _ElectionMapState extends State<ElectionMap>
   }
 
   void _home() {
+    if (_google) return _gKey.currentState?.home();
     _animateTo(Matrix4.identity());
   }
 
@@ -774,9 +800,10 @@ class _ElectionMapState extends State<ElectionMap>
           ),
         const SizedBox(height: 10),
         Text(
-          t.en
-              ? 'District boundaries from OCHA’s map; each seat’s area is worked out from the boundaries of its upazilas and wards, and is approximate. ${_mode == _Mode.districts ? 'Each district is in the colour of the party whose current Members of Parliament hold most of its seats; two colours mean a tie.' : 'Tap a symbol to see the seat’s area and its Member of Parliament.'}'
-              : 'জেলার সীমানা OCHA-র মানচিত্রে; আসনের জায়গা তার উপজেলা ও ওয়ার্ডের সীমানা থেকে হিসাব করা, আনুমানিক। ${_mode == _Mode.districts ? 'রং সেই জেলার বেশিরভাগ আসন যে দলের বর্তমান সংসদ সদস্যদের; দুই রং মানে সমান সমান।' : 'প্রতীকে চাপ দিলে আসনের এলাকা ও সংসদ সদস্য।'}',
+          (_google ? t('মানচিত্র: Google Maps। ', 'Map: Google Maps. ') : '') +
+              (t.en
+                  ? 'District boundaries from OCHA’s map; each seat’s area is worked out from the boundaries of its upazilas and wards, and is approximate. ${_mode == _Mode.districts ? 'Each district is in the colour of the party whose current Members of Parliament hold most of its seats; two colours mean a tie.' : 'Tap a symbol to see the seat’s area and its Member of Parliament.'}'
+                  : 'জেলার সীমানা OCHA-র মানচিত্রে; আসনের জায়গা তার উপজেলা ও ওয়ার্ডের সীমানা থেকে হিসাব করা, আনুমানিক। ${_mode == _Mode.districts ? 'রং সেই জেলার বেশিরভাগ আসন যে দলের বর্তমান সংসদ সদস্যদের; দুই রং মানে সমান সমান।' : 'প্রতীকে চাপ দিলে আসনের এলাকা ও সংসদ সদস্য।'}'),
           style: const TextStyle(
             fontFamily: _font,
             fontSize: 12.5,
@@ -821,6 +848,25 @@ class _ElectionMapState extends State<ElectionMap>
                             style: _mutedStyle,
                           ),
                   ),
+                )
+              : _google
+              ? _GoogleBox(
+                  key: _gKey,
+                  geo: geo,
+                  seats: widget.seats,
+                  mode: _mode,
+                  hidden: _hidden,
+                  filter: (_only.toList()..sort()).join(','),
+                  picked: _picked,
+                  pickedDistrict: _pickedDistrict,
+                  areas: _areas,
+                  discs: _discs,
+                  lead: lead,
+                  onSeat: _open,
+                  onDistrict: _pickDistrict,
+                  onEmpty: () {
+                    if (_picked != null) _close();
+                  },
                 )
               : LayoutBuilder(
                   builder: (context, box) {
@@ -897,10 +943,20 @@ class _ElectionMapState extends State<ElectionMap>
                     _home();
                   },
                 ),
+                if (_google) ...[
+                  const SizedBox(height: 6),
+                  // Road map or satellite, as the website's map offers.
+                  _ZoomButton(
+                    icon: Icons.layers_outlined,
+                    tip: t('মানচিত্র / স্যাটেলাইট', 'Map / satellite'),
+                    onTap: () => _gKey.currentState?.toggleType(),
+                  ),
+                ],
               ],
             ),
           ),
-        if (geo != null)
+        // Google's map needs no telling how to move it.
+        if (geo != null && !_google)
           Positioned(
             left: 10,
             bottom: 10,
