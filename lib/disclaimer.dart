@@ -29,6 +29,16 @@ String get kNotOfficial => t(
       'any government body and is not affiliated with any.',
 );
 
+/// The same statement, short, for the notice the app opens with (owner,
+/// 2026-10-17: the long one was too much to read before anything else). It
+/// still says the two things Play asks for: not the government's, and not
+/// affiliated with it.
+String get kNotOfficialShort => t(
+  'আমার এমপি একটি স্বাধীন, বেসরকারি তথ্যসেবা। এটি সরকারি অ্যাপ নয় এবং কোনো সরকারি প্রতিষ্ঠানের সঙ্গে যুক্ত নয়।',
+  'My MP is an independent, non-governmental information service. It is not a government app and is not '
+      'affiliated with any government body.',
+);
+
 typedef InfoSource = ({String label, String what, String url});
 
 /// The government sources, as the reader can check them.
@@ -242,6 +252,64 @@ class SourceList extends StatelessWidget {
   }
 }
 
+/// The sources on one line each, name and address, still a link: for the
+/// first-open notice. The Business Standard (the seat results) is left out
+/// here at the owner's wish (2026-10-17); it stays on the "আরও" tab and under
+/// every seat's result, and the last line says the full list is there, so the
+/// notice never reads as the whole list.
+class SourceLinks extends StatelessWidget {
+  const SourceLinks({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget row(InfoSource s, IconData icon) => InkWell(
+      onTap: () => openLink(context, s.url),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: AppColors.brand),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                s.label,
+                style: _bn(13, FontWeight.w600, AppColors.ink),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.open_in_new_rounded,
+              size: 15,
+              color: AppColors.muted,
+            ),
+          ],
+        ),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _groupTitle(t('তথ্যের সূত্র', 'Sources')),
+        for (final s in kOfficialSources)
+          row(s, Icons.account_balance_outlined),
+        for (final s in kOtherSources)
+          if (!s.url.contains('tbsnews.net')) row(s, Icons.menu_book_outlined),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+          child: Text(
+            t(
+              'ভোটের ফলের সূত্রসহ সব সূত্রের তালিকা, আর কোনটি থেকে কী তথ্য: আরও ট্যাবে।',
+              'The full list of sources, including the source of the election results, and what each '
+                  'supplies: on the More tab.',
+            ),
+            style: _bn(12, FontWeight.w400, AppColors.muted, height: 1.45),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// The statement with every source as a link, for the "আরও" tab.
 class DisclaimerCard extends StatelessWidget {
   const DisclaimerCard({super.key});
@@ -332,7 +400,8 @@ Future<void> showSourcesSheet(BuildContext context) {
 }
 
 /// Shown once, the first time the app opens, before anything else is read:
-/// what the app is not, and every source it draws on, each one a link.
+/// what the app is not, and every source it draws on, each one a link; short,
+/// with the details on the "আরও" tab.
 Future<void> showDisclaimerOnce(BuildContext context) async {
   // v2: the sources are now listed one by one (Play review, 21 September 2026).
   const key = 'not_official_notice_v2';
@@ -368,12 +437,12 @@ Future<void> showDisclaimerOnce(BuildContext context) async {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 child: Text(
-                  kNotOfficial,
-                  style: _bn(14, FontWeight.w400, AppColors.ink, height: 1.55),
+                  kNotOfficialShort,
+                  style: _bn(14, FontWeight.w500, AppColors.ink, height: 1.55),
                 ),
               ),
               const SizedBox(height: 4),
-              const SourceList(),
+              const SourceLinks(),
             ],
           ),
         ),
