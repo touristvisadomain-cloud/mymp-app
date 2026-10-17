@@ -30,6 +30,8 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   # A fake map platform for the tests of the Google path (test/maps_test.dart).
   google_maps_flutter_platform_interface: ^2.17.0
+  # The image cache kept in memory in tests (test/flutter_test_config.dart).
+  flutter_cache_manager: ^3.4.2
   flutter_launcher_icons: ^0.14.4
 
 flutter:
