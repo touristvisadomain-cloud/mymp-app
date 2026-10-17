@@ -28,6 +28,7 @@ import '../data/election.dart';
 import '../i18n.dart';
 import '../models.dart';
 import '../party_logo.dart';
+import '../search.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -172,6 +173,44 @@ class _ElectionMapState extends State<ElectionMap>
 
   final _query = TextEditingController();
   final _focus = FocusNode();
+
+  // The finder, built once for the seats it was given: a seat by its
+  // member's, its own or its district's name in either script, spelt any
+  // way the members search allows; and a district by name, to open it whole.
+  List<ElectionSeat>? _indexed;
+  TextSearch<ElectionSeat>? _seatFinder;
+  TextSearch<_DistrictHit>? _districtFinder;
+
+  void _index() {
+    if (identical(_indexed, widget.seats)) return;
+    _indexed = widget.seats;
+    _seatFinder = TextSearch<ElectionSeat>(
+      widget.seats,
+      (s) => [
+        (
+          '${s.member?.nameBn ?? ''} ${s.member?.nameEn ?? ''} ${s.nameAlt ?? ''}',
+          1.5,
+        ),
+        ('${s.name} ${s.seatAlt ?? ''} ${s.slug.replaceAll('-', ' ')}', 1.4),
+        ('${s.districtName} ${s.districtAlt ?? ''}', 1.0),
+      ],
+    );
+    final districts = <String, _DistrictHit>{};
+    for (final s in widget.seats) {
+      final d = districts[s.districtSlug];
+      districts[s.districtSlug] = (
+        slug: s.districtSlug,
+        name: s.districtName,
+        alt: s.districtAlt,
+        seats: (d?.seats ?? 0) + 1,
+      );
+    }
+    _districtFinder = TextSearch<_DistrictHit>(
+      districts.values,
+      (d) => [('${d.name} ${d.alt ?? ''} ${d.slug.replaceAll('-', ' ')}', 1.0)],
+    );
+  }
+
   final _tc = TransformationController();
   late final _anim = AnimationController(
     vsync: this,
@@ -310,6 +349,14 @@ class _ElectionMapState extends State<ElectionMap>
     }, onError: (_) => toPoint());
   }
 
+  /// A district from the search: the seats view, the district picked.
+  void _openDistrict(String slug) {
+    _query.clear();
+    _focus.unfocus();
+    setState(() => _mode = _Mode.seats);
+    _pickDistrict(slug);
+  }
+
   void _pickDistrict(String slug) {
     setState(() {
       _pickedDistrict = slug;
@@ -444,9 +491,11 @@ class _ElectionMapState extends State<ElectionMap>
   Widget build(BuildContext context) {
     final parties = _parties;
     final lead = _lead;
-    final hits = _query.text.trim().length < 2
-        ? const <ElectionSeat>[]
-        : widget.seats.where((s) => s.matches(_query.text)).take(8).toList();
+    _index();
+    final typed = _query.text.trim();
+    final hits = _seatFinder!.search(typed).take(8).toList();
+    final districtHits = _districtFinder!.search(typed).take(2).toList();
+    final nothing = typed.length >= 2 && hits.isEmpty && districtHits.isEmpty;
     final screenH = MediaQuery.sizeOf(context).height;
     final mapH = (screenH * 0.6).clamp(340.0, 560.0);
 
@@ -500,15 +549,80 @@ class _ElectionMapState extends State<ElectionMap>
             ),
           ),
           onSubmitted: (_) {
-            if (hits.isNotEmpty) _open(hits.first);
+            if (districtHits.isNotEmpty && hits.length > 1) {
+              _openDistrict(districtHits.first.slug);
+            } else if (hits.isNotEmpty) {
+              _open(hits.first);
+            }
           },
         ),
-        if (hits.isNotEmpty)
+        if (nothing)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+            child: Text(
+              t(
+                '“$typed” নামে কোনো আসন, এমপি বা জেলা পাওয়া যায়নি।',
+                'No seat, MP or district found for “$typed”.',
+              ),
+              style: const TextStyle(
+                fontFamily: _font,
+                fontSize: 13,
+                color: AppColors.muted,
+              ),
+            ),
+          ),
+        if (hits.isNotEmpty || districtHits.isNotEmpty)
           Container(
             margin: const EdgeInsets.only(top: 4),
             decoration: AppDecor.card(radius: 12),
             child: Column(
               children: [
+                // A district first: "ঢাকা" most likely means the district.
+                for (final d in districtHits)
+                  InkWell(
+                    onTap: () => _openDistrict(d.slug),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.location_city_outlined,
+                            size: 18,
+                            color: AppColors.brand,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              t('${d.name} জেলা', '${d.name} district'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: _font,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.brand,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            t(
+                              '${t.n(d.seats)}টি আসন',
+                              '${d.seats} ${d.seats == 1 ? 'seat' : 'seats'}',
+                            ),
+                            style: const TextStyle(
+                              fontFamily: _font,
+                              fontSize: 12.5,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 for (final s in hits)
                   InkWell(
                     onTap: () => _open(s),
@@ -1837,3 +1951,7 @@ class _CardShell extends StatelessWidget {
     );
   }
 }
+
+/// A district as the map's search offers it: its name in the page's
+/// language and the other, and how many seats it has.
+typedef _DistrictHit = ({String slug, String name, String? alt, int seats});
