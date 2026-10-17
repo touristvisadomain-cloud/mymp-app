@@ -18,6 +18,7 @@ import 'package:mymp/models.dart';
 import 'package:mymp/screens/adviser_screen.dart';
 import 'package:mymp/screens/cabinet_screen.dart';
 import 'package:mymp/screens/election_screen.dart';
+import 'package:mymp/screens/house_overview.dart';
 import 'package:mymp/screens/member_screen.dart';
 import 'package:mymp/screens/members_screen.dart';
 import 'package:mymp/screens/more_screen.dart';
@@ -119,13 +120,15 @@ void main() {
       for (var i = 0; i < 10; i++) {
         await t.pump(const Duration(milliseconds: 200));
       }
-      expect(find.text(_tr('শীর্ষ নেতৃত্ব', 'Leadership')), findsOneWidget);
+      // The top of the list: the House at a glance (the leaders are below it).
+      expect(find.byType(HouseOverview), findsOneWidget);
       offline = true;
       await t.fling(find.byType(CustomScrollView), const Offset(0, 500), 1500);
       for (var i = 0; i < 20; i++) {
         await t.pump(const Duration(milliseconds: 200));
       }
-      expect(find.text(_tr('শীর্ষ নেতৃত্ব', 'Leadership')), findsOneWidget);
+      // The top of the list: the House at a glance (the leaders are below it).
+      expect(find.byType(HouseOverview), findsOneWidget);
       expect(
         find.textContaining(_tr('হালনাগাদ করা গেল না', 'Could not update')),
         findsOneWidget,

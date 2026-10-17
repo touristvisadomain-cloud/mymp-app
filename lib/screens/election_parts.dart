@@ -678,7 +678,7 @@ class CompositionBar extends StatelessWidget {
                     left: x.clamp(0.0, w - 1.5),
                     top: 16,
                     bottom: 0,
-                    child: const _DashedLine(),
+                    child: const DashedLine(),
                   ),
                 ],
               ),
@@ -732,8 +732,8 @@ class CompositionBar extends StatelessWidget {
 }
 
 /// The majority mark: a dashed upright line.
-class _DashedLine extends StatelessWidget {
-  const _DashedLine();
+class DashedLine extends StatelessWidget {
+  const DashedLine({super.key});
 
   @override
   Widget build(BuildContext context) =>
