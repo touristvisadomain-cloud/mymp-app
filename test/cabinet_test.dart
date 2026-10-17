@@ -323,9 +323,9 @@ void main() {
               const CabinetScreen(),
               shows: [
                 tr('সর্বশেষ যাচাই', 'Last checked'),
-                tr('সূত্র: মন্ত্রিপরিষদ বিভাগ', 'Source: Cabinet Division'),
+                tr('মন্ত্রিসভায় মোট', 'In the Cabinet'),
                 tr('সব সংসদ সদস্য', 'All MPs'),
-                tr('এখন কেউ নেই', 'None at present'),
+                tr('এখন কেউ নেই', 'none at present'),
                 tr('মন্ত্রিসভা দল অনুযায়ী', 'The Cabinet by party'),
                 tr('সংসদ সদস্য নন', 'Not an MP'),
                 tr('টি দায়িত্ব', 'responsibilities'),

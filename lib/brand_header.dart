@@ -90,6 +90,8 @@ class BrandHeader extends StatelessWidget {
                             ],
                           ),
                         ),
+                        // Room between a long subtitle and the mark.
+                        const SizedBox(width: 12),
                         trailing ?? const BrandMark(),
                       ],
                     ),
