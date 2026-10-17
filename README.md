@@ -2,7 +2,9 @@
 
 The mymp.bd reader, in Flutter. Four screens: every member of the thirteenth
 parliament, the news and videos written about them, the cabinet, and the
-parties. No account, no ads, nothing collected.
+parties. No account, no ads; the app collects nothing. Its maps are Google
+Maps (owner, 2026-10-17), so Google's map service receives the usual technical
+data to show them.
 
 ```bash
 flutter pub get
@@ -79,9 +81,29 @@ Two rules worth keeping:
   website go to its /en pages in English. The avatar letter skips the
   honorific in either script: মোঃ আবুল হাসনাত is filed under আ, Md. Abul
   Hasnat under A. The font is bundled, not fetched; it carries Latin too.
-* **Nothing is collected.** No analytics, no crash reporter, no account, no
-  permission beyond `INTERNET`. The Play data-safety answer is "no data
-  collected", and every dependency added should keep that true.
+* **Nothing is collected by the app.** No analytics, no crash reporter, no
+  account, no permission beyond `INTERNET`. The one exception the owner chose
+  (2026-10-17) is Google Maps: the election, district and seat maps are
+  Google's when the build has a key, and Google's map service then receives
+  the usual technical data from the phone. No location permission, no
+  "my location", no analytics, and no other dependency that collects data.
+  The app's privacy texts (lib/disclaimer.dart, the More tab) say so; the
+  Play data-safety answer has to follow (docs/play-listing.md).
+* **The Maps key.** Android reads `MAPS_API_KEY` from `android/local.properties`
+  (git-ignored) or the environment variable `MAPS_API_KEY` (Codemagic), and
+  puts it into the manifest's `com.google.android.geo.API_KEY`. iOS reads it
+  from `ios/Flutter/MapsKey.xcconfig` (`MAPS_API_KEY=…`, git-ignored) into
+  Info.plist's `GMSApiKey`. Before the first frame the app asks the phone
+  whether the key is there (`bd.mymp.app/maps`, MainActivity and AppDelegate);
+  without one, and on the web and in the tests, it draws its own maps, as
+  before, and never opens a Google map. `--dart-define=MAPS=0` forces the
+  drawn maps in a build that has a key. The Android key is restricted in
+  Google Cloud to "Maps SDK for Android", the package `bd.mymp.app` and the
+  SHA-1 of each signing key (`keytool -list -v -keystore <file> -alias <alias>`;
+  the debug key is `%USERPROFILE%\.android\debug.keystore`, alias
+  `androiddebugkey`, password `android`). An app installed from Play is
+  signed by Google's app-signing key: add that SHA-1 too (Play Console, Test
+  and release > App integrity).
 
 ## Releasing
 

@@ -90,7 +90,7 @@ Sources (everything in the app comes from these)
 • Every headline in the news section carries the publisher's name and opens on the publisher's own site; the app writes no news itself.
 Each source is linked inside the app under "More", and every result and biography names its own source.
 
-No account, no personal data collected, no ads.
+No account, no ads; the app itself collects no personal data. The maps are Google Maps.
 
 Report an error, with a source: mymp.bangladesh@gmail.com
 ```
@@ -113,7 +113,7 @@ Report an error, with a source: mymp.bangladesh@gmail.com
 | Content rating | Category: **Reference, News, or Educational**। সহিংসতা, যৌনতা, মাদক, জুয়া, গালি: No। User interaction বা content sharing: No। Location sharing: No। Digital purchases: No |
 | Target audience | **13-15, 16-17, 18 and over** তিনটাই টিক; ১৩-র নিচের কোনো বয়স নয় (তাহলে Families নীতির বাড়তি শর্ত আসে)। "Appeals to children" প্রশ্নে: No। এটা শুধু ঘোষণা, কে ইনস্টল করতে পারবে তা ঠিক করে content rating, আর এই অ্যাপের rating সবার জন্য খোলা |
 | News apps | No। অ্যাপের মূল কাজ সংসদ সদস্যদের তথ্য; সংবাদ শুধু শিরোনাম, যা মূল সংবাদমাধ্যমে খোলে |
-| Data safety | Does your app collect or share any of the required user data types? **No**। ফলে বাকি প্রশ্ন আসে না |
+| Data safety | ১.৩.৪ থেকে মানচিত্র Google Maps-এর (owner, 2026-10-17)। অ্যাপ নিজে কিছু সংগ্রহ করে না, কিন্তু Maps SDK Google-এ তথ্য পাঠায়, তাই উত্তর আর শুধু **No** নয়: docs/play-listing.md-এর "Data safety" অংশ দেখে Google-এর Maps SDK disclosure অনুযায়ী পূরণ করুন |
 | Government apps | No (সরকারের পক্ষে বানানো নয়) |
 | Financial features | My app doesn't provide any financial features |
 | Health | কোনোটাই নয় |

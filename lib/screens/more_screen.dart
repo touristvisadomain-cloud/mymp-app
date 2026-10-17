@@ -9,6 +9,7 @@ import '../i18n.dart';
 import '../models.dart';
 import '../party_logo.dart';
 import '../loading.dart';
+import '../maps/google.dart';
 import '../theme.dart';
 import '../version.dart';
 import '../widgets.dart';
@@ -267,13 +268,45 @@ class _MoreScreenState extends State<MoreScreen> {
                       const SizedBox(height: 8),
                       Text(
                         t(
-                          'কোনো অ্যাকাউন্ট লাগে না, কিছু জমা নেওয়া হয় না। শুধু সংসদ সদস্যদের তালিকাটি ফোনেই রেখে দেওয়া হয়, '
+                          'কোনো অ্যাকাউন্ট লাগে না, অ্যাপ নিজে কিছু জমা নেয় না। শুধু সংসদ সদস্যদের তালিকাটি ফোনেই রেখে দেওয়া হয়, '
                               'যাতে নেটওয়ার্ক না থাকলেও অ্যাপ খোলে। সব তথ্য mymp.bd থেকে আসে।',
-                          'No account is needed and nothing is collected. Only the list of Members of Parliament is kept '
-                              'on the phone, so that the app opens even with no network. All information comes from mymp.bd.',
+                          'No account is needed, and the app itself collects nothing. Only the list of Members of Parliament '
+                              'is kept on the phone, so that the app opens even with no network. All information comes from mymp.bd.',
                         ),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
+                      // The one thing that leaves the phone for anyone but
+                      // mymp.bd (owner, 2026-10-17), said where the reader
+                      // looks for it.
+                      if (GoogleMaps.enabled) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          t(
+                            'মানচিত্রগুলো Google Maps-এর। মানচিত্র দেখানোর জন্য Google আপনার ফোন থেকে সাধারণ কারিগরি তথ্য পায় '
+                                '(যেমন IP ঠিকানা, ফোন ও অ্যাপের ধরন), যা Google-এর গোপনীয়তা নীতির অধীন। অ্যাপ আপনার অবস্থান জানতে চায় না।',
+                            'The maps are Google Maps. To show them, Google receives the usual technical data from your phone '
+                                '(such as its IP address and the kind of phone and app), under Google’s privacy policy. '
+                                'The app does not ask where you are.',
+                          ),
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: TextButton(
+                            onPressed: () => _open(kGooglePrivacyUrl),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              foregroundColor: AppColors.brand,
+                            ),
+                            child: Text(
+                              t(
+                                'Google-এর গোপনীয়তা নীতি',
+                                'Google’s privacy policy',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

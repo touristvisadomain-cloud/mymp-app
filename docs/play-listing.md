@@ -81,7 +81,8 @@ supplied graphics do).
 সংবাদের ক্ষেত্রে শুধু শিরোনাম, সংবাদমাধ্যমের নাম ও মূল খবরের লিংক দেখানো হয়; পুরো খবর
 কপি করা হয় না। ভিডিও চলে যে চ্যানেল প্রকাশ করেছে তার নিজস্ব পাতায়।
 
-কোনো অ্যাকাউন্ট লাগে না। কোনো ব্যক্তিগত তথ্য সংগ্রহ করা হয় না, কোনো বিজ্ঞাপন নেই।
+কোনো অ্যাকাউন্ট লাগে না। অ্যাপ নিজে কোনো ব্যক্তিগত তথ্য সংগ্রহ করে না, কোনো বিজ্ঞাপন নেই।
+মানচিত্রগুলো Google Maps-এর; মানচিত্র দেখাতে Google সাধারণ কারিগরি তথ্য পায়।
 সদস্যতালিকাটি ফোনেই রাখা হয়, তাই নেটওয়ার্ক দুর্বল হলেও অ্যাপ খোলে।
 
 ভুল চোখে পড়লে জানান: https://mymp.bd/jogajog
@@ -90,19 +91,28 @@ supplied graphics do).
 
 ## Data safety
 
-Answer **"No, this app does not collect or share any user data."** That is true:
+**Changed with version 1.3.4 (owner, 2026-10-17): the maps are Google Maps.**
+The app itself still collects nothing:
 
 - there is no account, no analytics, no crash reporter and no advertising id;
-- the only Android permission is `INTERNET`;
+- the only Android permission is `INTERNET` (no location permission);
 - the phone keeps a copy of the public member list, which is app content, not
   user data, and one on/off flag that the first-launch notice was seen, which
   never leaves the phone.
 
+But the Google Maps SDK in the app sends data to Google to show the maps, and
+Play counts what an SDK in the app collects. So the answer is no longer simply
+"No". Before submitting 1.3.4, fill the form from Google's own disclosure for
+the SDK: "Google Play data disclosure requirements" for the Maps SDK for
+Android (developers.google.com/maps/documentation/android-sdk/play-data-disclosure),
+which lists the data types the SDK collects and why. Declare those, as
+collected by the SDK for app functionality, and nothing else.
+
 Two more questions on the form:
-- **Is all user data encrypted in transit?** Not applicable, because nothing is
-  sent. The app's own requests all use HTTPS.
-- **Do you provide a way to delete data?** Not applicable, because nothing is
-  held.
+- **Is all user data encrypted in transit?** As Google's disclosure page for
+  the Maps SDK says; the app's own requests all use HTTPS.
+- **Do you provide a way to delete data?** The app holds nothing; what Google
+  receives for the maps is under Google's privacy policy.
 
 ## Content rating
 
@@ -138,7 +148,9 @@ government body. It says so on first launch, on the member list, and in the
 "আরও" (More) tab, which links the official sources: parliament.gov.bd,
 ecs.gov.bd and cabinet.gov.bd.
 
-There is no login, no account, and no user data of any kind is collected.
+There is no login and no account, and the app itself collects no user data.
+Its maps are Google Maps (Maps SDK for Android), which receives the usual
+technical data from the phone to show them; the app asks for no location.
 
 News and videos: the app shows only headlines, the outlet's or channel's name
 and a link. Tapping one opens the outlet's own page or the channel's video in
