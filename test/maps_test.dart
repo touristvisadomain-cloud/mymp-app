@@ -19,6 +19,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mymp/disclaimer.dart';
 import 'package:mymp/i18n.dart';
+import 'package:mymp/maps/election_map.dart' show tieHalves;
 import 'package:mymp/maps/google.dart';
 import 'package:mymp/maps/seat_map.dart';
 import 'package:mymp/screens/district_map.dart';
@@ -397,6 +398,34 @@ void main() {
         expect(kGooglePrivacyUrl, startsWith('https://policies.google.com/'));
       });
     }
+  });
+  group('a tied district', () {
+    test('is cut on the diagonal into two halves', () {
+      double area(List<Offset> r) {
+        var a = 0.0;
+        for (var i = 0; i < r.length; i++) {
+          final p = r[i], q = r[(i + 1) % r.length];
+          a += p.dx * q.dy - q.dx * p.dy;
+        }
+        return a.abs() / 2;
+      }
+
+      // A square, lon 90..91, lat 23..24.
+      const sq = [
+        Offset(90, 23),
+        Offset(91, 23),
+        Offset(91, 24),
+        Offset(90, 24),
+      ];
+      final (a, b) = tieHalves([sq]);
+      expect(a, hasLength(1));
+      expect(b, hasLength(1));
+      expect(area(a.single), closeTo(0.5, 1e-9));
+      expect(area(b.single), closeTo(0.5, 1e-9));
+      // The first half is the top left: it holds the north-west corner.
+      expect(a.single, contains(const Offset(90, 24)));
+      expect(b.single, contains(const Offset(91, 23)));
+    });
   });
 }
 

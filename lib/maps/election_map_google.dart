@@ -48,6 +48,41 @@ class _GoogleBox extends StatefulWidget {
   State<_GoogleBox> createState() => _GoogleBoxState();
 }
 
+/// A tied district's two halves, cut on the diagonal from its box's top left
+/// to bottom right, as the website draws a tie: (top-left, bottom-right).
+/// Each ring is clipped to a half-plane; where a ring is not convex the cut
+/// can leave a zero-width seam, which does not show as the halves have no
+/// outline.
+(List<List<Offset>>, List<List<Offset>>) tieHalves(List<List<Offset>> rings) {
+  var x0 = double.infinity, x1 = -double.infinity;
+  var y0 = double.infinity, y1 = -double.infinity;
+  for (final ring in rings) {
+    for (final p in ring) {
+      x0 = math.min(x0, p.dx);
+      x1 = math.max(x1, p.dx);
+      y0 = math.min(y0, p.dy);
+      y1 = math.max(y1, p.dy);
+    }
+  }
+  final w = x1 - x0 == 0 ? 1.0 : x1 - x0;
+  final h = y1 - y0 == 0 ? 1.0 : y1 - y0;
+  double u(Offset p) => (p.dx - x0) / w + (y1 - p.dy) / h - 1;
+  List<Offset>? clip(List<Offset> ring, bool Function(double) keep) {
+    final out = <Offset>[];
+    for (var i = 0; i < ring.length; i++) {
+      final p = ring[i], q = ring[(i + 1) % ring.length];
+      final up = u(p), uq = u(q);
+      if (keep(up)) out.add(p);
+      if (keep(up) != keep(uq)) out.add(Offset.lerp(p, q, up / (up - uq))!);
+    }
+    return out.length >= 3 ? out : null;
+  }
+
+  List<List<Offset>> half(bool Function(double) keep) =>
+      rings.map((r) => clip(r, keep)).whereType<List<Offset>>().toList();
+  return (half((v) => v < 0), half((v) => v >= 0));
+}
+
 /// A marker's size on screen, in logical pixels; larger when picked.
 const _gSmall = 26.0;
 const _gBig = 36.0;
@@ -223,22 +258,40 @@ class _GoogleBoxState extends State<_GoogleBox> {
         final b = ps.length > 1 ? ps[1] : null;
         final tie = a != null && b != null && a.seats == b.seats;
         final alpha = picked != null && !on ? 0.3 : 0.55;
-        fill =
-            (a == null
-                    ? const Color(0xFF9A9A9A)
-                    : partyColour(tie ? b.abbr : a.abbr))
-                .withValues(alpha: alpha);
-        // A tie: one party's colour inside, the other's as the outline.
-        stroke = on
-            ? AppColors.ink
-            : tie
-            ? partyColour(a.abbr)
-            : Colors.white;
-        width = on || tie ? 3 : 1;
+        fill = (a == null ? const Color(0xFF9A9A9A) : partyColour(a.abbr))
+            .withValues(alpha: tie ? 0 : alpha);
+        // The picked district: a white halo, with the brand's line over it
+        // (_pickLine).
+        stroke = Colors.white;
+        width = on ? 6 : 1;
+        // A tie: the district cut on the diagonal into the two colours, under
+        // its outline.
+        if (tie) {
+          final (ha, hb) = tieHalves(d.rings);
+          for (final (k, (rings, abbr)) in [
+            (ha, a.abbr),
+            (hb, b.abbr),
+          ].indexed) {
+            for (final (i, ring) in rings.indexed) {
+              out.add(
+                Polygon(
+                  polygonId: PolygonId('t/${d.slug}/$k/$i'),
+                  points: [for (final p in ring) LatLng(p.dy, p.dx)],
+                  fillColor: partyColour(abbr).withValues(alpha: alpha),
+                  strokeColor: Colors.transparent,
+                  strokeWidth: 0,
+                  zIndex: 0,
+                  consumeTapEvents: true,
+                  onTap: () => widget.onDistrict(d.slug),
+                ),
+              );
+            }
+          }
+        }
       } else {
         fill = AppColors.brand.withValues(alpha: on ? 0.08 : 0);
-        stroke = on ? AppColors.ink : const Color(0x995F6B64);
-        width = on ? 2 : 1;
+        stroke = on ? const Color(0xE6FFFFFF) : const Color(0x995F6B64);
+        width = on ? 5 : 1;
       }
       for (final (i, ring) in d.rings.indexed) {
         out.add(
@@ -259,6 +312,29 @@ class _GoogleBoxState extends State<_GoogleBox> {
     }
     _districtsFor = key;
     return _districts = out;
+  }
+
+  /// The picked district's line, in the brand's dark green over its white
+  /// halo.
+  Set<Polyline> _pickLine() {
+    final slug = widget.pickedDistrict;
+    if (slug == null) return const {};
+    final d = widget.geo.districts.where((d) => d.slug == slug).firstOrNull;
+    if (d == null) return const {};
+    return {
+      for (final (i, ring) in d.rings.indexed)
+        Polyline(
+          polylineId: PolylineId('p/$slug/$i'),
+          points: [
+            for (final p in ring) LatLng(p.dy, p.dx),
+            LatLng(ring.first.dy, ring.first.dx),
+          ],
+          color: AppColors.brandDark,
+          width: 2,
+          jointType: JointType.round,
+          zIndex: 2,
+        ),
+    };
   }
 
   Color get _areaColour {
@@ -340,7 +416,7 @@ class _GoogleBoxState extends State<_GoogleBox> {
           trafficEnabled: false,
           markers: _markers(),
           polygons: {..._districtLayer(), ..._areaPolygons()},
-          polylines: _areaDashes(),
+          polylines: {..._pickLine(), ..._areaDashes()},
           onTap: (_) {
             if (widget.mode == _Mode.seats) widget.onEmpty();
           },

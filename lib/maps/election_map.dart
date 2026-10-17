@@ -802,8 +802,8 @@ class _ElectionMapState extends State<ElectionMap>
         Text(
           (_google ? t('মানচিত্র: Google Maps। ', 'Map: Google Maps. ') : '') +
               (t.en
-                  ? 'District boundaries from OCHA’s map; each seat’s area is worked out from the boundaries of its upazilas and wards, and is approximate. ${_mode == _Mode.districts ? 'Each district is in the colour of the party whose current Members of Parliament hold most of its seats; two colours mean a tie.' : 'Tap a symbol to see the seat’s area and its Member of Parliament.'}'
-                  : 'জেলার সীমানা OCHA-র মানচিত্রে; আসনের জায়গা তার উপজেলা ও ওয়ার্ডের সীমানা থেকে হিসাব করা, আনুমানিক। ${_mode == _Mode.districts ? 'রং সেই জেলার বেশিরভাগ আসন যে দলের বর্তমান সংসদ সদস্যদের; দুই রং মানে সমান সমান।' : 'প্রতীকে চাপ দিলে আসনের এলাকা ও সংসদ সদস্য।'}'),
+                  ? 'District boundaries are their upazilas’ (OpenStreetMap) merged and cut at the coast; each seat’s area is worked out from the boundaries of its upazilas and wards, and is approximate. ${_mode == _Mode.districts ? 'Each district is in the colour of the party whose current Members of Parliament hold most of its seats; two colours mean a tie.' : 'Tap a symbol to see the seat’s area and its Member of Parliament.'}'
+                  : 'জেলার সীমানা তার উপজেলাগুলোর (OpenStreetMap) সীমানা জুড়ে, উপকূলে কেটে; আসনের জায়গা তার উপজেলা ও ওয়ার্ডের সীমানা থেকে হিসাব করা, আনুমানিক। ${_mode == _Mode.districts ? 'রং সেই জেলার বেশিরভাগ আসন যে দলের বর্তমান সংসদ সদস্যদের; দুই রং মানে সমান সমান।' : 'প্রতীকে চাপ দিলে আসনের এলাকা ও সংসদ সদস্য।'}'),
           style: const TextStyle(
             fontFamily: _font,
             fontSize: 12.5,
@@ -1208,7 +1208,15 @@ class _MapPainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeJoin = StrokeJoin.round
-          ..color = AppColors.ink
+          ..color = Colors.white
+          ..strokeWidth = 5 * hair,
+      );
+      canvas.drawPath(
+        sheet.paths[pd]!,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeJoin = StrokeJoin.round
+          ..color = AppColors.brandDark
           ..strokeWidth = 2 * hair,
       );
     }
