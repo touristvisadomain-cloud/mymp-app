@@ -577,71 +577,111 @@ class _ProfileBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Party, seat and district, each opening its own page.
-                Wrap(
-                  spacing: 14,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (b.party != null)
-                      _Tappable(
-                        onTap: MemberLinks.party == null
-                            ? null
-                            : () => MemberLinks.party!(
-                                context,
-                                b.party!.toLowerCase(),
-                              ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            PartyLogo(abbr: b.party, size: 18),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                d.partyNameBn ?? b.partyBn ?? b.party!,
-                                style: text.labelLarge?.copyWith(
-                                  fontSize: 14.5,
-                                ),
-                              ),
+                // The party on a line of its own, opening its page.
+                if (b.party != null)
+                  _Tappable(
+                    onTap: MemberLinks.party == null
+                        ? null
+                        : () => MemberLinks.party!(
+                            context,
+                            b.party!.toLowerCase(),
+                          ),
+                    child: Row(
+                      children: [
+                        PartyLogo(abbr: b.party, size: 22),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            d.partyNameBn ?? b.partyBn ?? b.party!,
+                            style: text.titleSmall?.copyWith(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
                             ),
-                          ],
-                        ),
-                      ),
-                    if (seat?.nameBn != null)
-                      _Tappable(
-                        onTap: MemberLinks.seat == null
-                            ? null
-                            : () => MemberLinks.seat!(context, seat!.slug),
-                        child: Text(
-                          seat!.nameBn!,
-                          style: text.labelLarge?.copyWith(
-                            fontSize: 14.5,
-                            color: AppColors.brand,
                           ),
                         ),
-                      ),
-                    if (seat?.districtBn != null)
-                      _Tappable(
-                        onTap:
-                            MemberLinks.district == null || districtSlug == null
-                            ? null
-                            : () =>
-                                  MemberLinks.district!(context, districtSlug),
-                        child: Text(
-                          t(
-                            '${seat!.districtBn} জেলা',
-                            '${seat.districtBn} district',
+                        if (MemberLinks.party != null)
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: AppColors.muted,
                           ),
-                          style: text.bodyMedium,
-                        ),
+                      ],
+                    ),
+                  ),
+                // Then where: the seat, and its district beside it.
+                if (seat?.nameBn != null || seat?.districtBn != null) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.location_on_outlined,
+                        size: 18,
+                        color: AppColors.brand,
                       ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                      const SizedBox(width: 6),
+                      if (seat?.nameBn != null)
+                        _Tappable(
+                          onTap: MemberLinks.seat == null
+                              ? null
+                              : () => MemberLinks.seat!(context, seat!.slug),
+                          child: Text(
+                            seat!.nameBn!,
+                            style: text.labelLarge?.copyWith(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.brand,
+                            ),
+                          ),
+                        ),
+                      if (seat?.nameBn != null && seat?.districtBn != null)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8),
+                          child: Text(
+                            '·',
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                        ),
+                      if (seat?.districtBn != null)
+                        Flexible(
+                          child: _Tappable(
+                            onTap:
+                                MemberLinks.district == null ||
+                                    districtSlug == null
+                                ? null
+                                : () => MemberLinks.district!(
+                                    context,
+                                    districtSlug,
+                                  ),
+                            child: Text(
+                              t(
+                                '${seat!.districtBn} জেলা',
+                                '${seat.districtBn} district',
+                              ),
+                              style: text.bodyMedium,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 14),
+                // The posts first, in dark; then the plainer facts.
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    for (final r in d.rolesBn)
+                      _Badge(
+                        r,
+                        background: AppColors.ink,
+                        foreground: Colors.white,
+                      ),
+                    for (final r in d.postBadgesBn)
+                      _Badge(
+                        r,
+                        background: AppColors.ink,
+                        foreground: Colors.white,
+                      ),
                     if (d.resignedOn != null)
                       _Badge(
                         t(
@@ -660,18 +700,6 @@ class _ProfileBody extends StatelessWidget {
                         background: AppColors.brandSoft,
                         foreground: AppColors.brand,
                       ),
-                    for (final r in d.rolesBn)
-                      _Badge(
-                        r,
-                        background: AppColors.ink,
-                        foreground: Colors.white,
-                      ),
-                    for (final r in d.postBadgesBn)
-                      _Badge(
-                        r,
-                        background: AppColors.ink,
-                        foreground: Colors.white,
-                      ),
                     if (times > 1)
                       _Badge(
                         t(
@@ -688,27 +716,79 @@ class _ProfileBody extends StatelessWidget {
                   ],
                 ),
                 if (checked != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    '${t('সরকারি পদ সর্বশেষ যাচাই', 'Government posts last checked')}: $checked',
-                    style: text.labelSmall?.copyWith(fontSize: 12.5),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.verified_outlined,
+                        size: 14,
+                        color: AppColors.muted,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          '${t('সরকারি পদ সর্বশেষ যাচাই', 'Government posts last checked')}: $checked',
+                          style: text.labelSmall?.copyWith(fontSize: 12),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
                 if (d.resignedOn != null) ...[
                   const SizedBox(height: 12),
                   _resigned(context),
                 ],
+                // The member's own accounts: round buttons with a short name
+                // under each, in one row, rather than long wrapped pills.
                 if (d.socials.isNotEmpty || d.facebookNotice != null) ...[
+                  const SizedBox(height: 14),
+                  const Divider(height: 1),
                   const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final s in d.socials) _SocialChip(social: s),
-                      if (d.facebookNotice != null)
-                        _SocialChip.notice(d.facebookNotice!),
-                    ],
+                  Text(
+                    t('অফিসিয়াল অ্যাকাউন্ট', 'Official accounts'),
+                    style: text.labelSmall?.copyWith(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
+                  const SizedBox(height: 10),
+                  // Up to five share one row evenly; more wrap.
+                  d.socials.length <= 5
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (final s in d.socials)
+                              Expanded(child: _SocialButton(social: s)),
+                            for (var k = d.socials.length; k < 5; k++)
+                              const Spacer(),
+                          ],
+                        )
+                      : Wrap(
+                          spacing: 6,
+                          runSpacing: 10,
+                          children: [
+                            for (final s in d.socials)
+                              SizedBox(
+                                width: 62,
+                                child: _SocialButton(social: s),
+                              ),
+                          ],
+                        ),
+                  if (d.facebookNotice != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const SocialIcon('facebook', size: 14),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            d.facebookNotice!,
+                            style: text.labelSmall?.copyWith(fontSize: 12.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ],
             ),
@@ -1906,67 +1986,74 @@ class _Tappable extends StatelessWidget {
         );
 }
 
-/// One of the member's accounts as a chip in the header.
-class _SocialChip extends StatelessWidget {
-  final ProfileSocial? social;
-  final String? notice;
-  const _SocialChip({required ProfileSocial this.social}) : notice = null;
-  const _SocialChip.notice(String this.notice) : social = null;
+/// One of the member's accounts in the header: the service's mark in a round
+/// button and its short name under it; a page not yet confirmed says so.
+class _SocialButton extends StatelessWidget {
+  final ProfileSocial social;
+  const _SocialButton({required this.social});
+
+  static String _name(String key) => switch (key) {
+    'facebook' => t('ফেসবুক', 'Facebook'),
+    'x' => 'X',
+    'youtube' => t('ইউটিউব', 'YouTube'),
+    'instagram' => t('ইনস্টাগ্রাম', 'Instagram'),
+    'website' => t('ওয়েবসাইট', 'Website'),
+    _ => key,
+  };
 
   @override
   Widget build(BuildContext context) {
     final s = social;
-    final label = TextStyle(
-      fontFamily: 'NotoSansBengali',
-      fontSize: 13,
-      height: 1.3,
-      fontWeight: s == null ? FontWeight.w400 : FontWeight.w600,
-      color: s == null ? AppColors.muted : AppColors.ink,
-    );
-    final body = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SocialIcon(s?.key ?? 'facebook', size: 15),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text.rich(
-            TextSpan(
-              text: s?.label ?? notice,
+    return Semantics(
+      button: true,
+      label: s.label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => openLink(context, s.url),
+        child: SizedBox(
+          width: double.infinity,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Column(
               children: [
-                if (s != null && s.unverified)
-                  TextSpan(
-                    text: ' (${t('যাচাই করা হয়নি', 'Not verified')})',
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.paper,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.rule),
+                  ),
+                  alignment: Alignment.center,
+                  child: SocialIcon(s.key, size: 20),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  _name(s.key),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'NotoSansBengali',
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.inkSoft,
+                    height: 1.3,
+                  ),
+                ),
+                if (s.unverified)
+                  Text(
+                    t('যাচাই হয়নি', 'Unverified'),
                     style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
+                      fontFamily: 'NotoSansBengali',
+                      fontSize: 10,
                       color: AppColors.muted,
+                      height: 1.2,
                     ),
                   ),
               ],
             ),
-            style: label,
           ),
-        ),
-      ],
-    );
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
-      side: BorderSide(
-        color: AppColors.rule,
-        // A page in dispute: no link, a dashed-looking pale outline.
-        style: BorderStyle.solid,
-        width: s == null ? 0.8 : 1,
-      ),
-    );
-    return Material(
-      color: s == null ? Colors.transparent : AppColors.surface,
-      shape: shape,
-      child: InkWell(
-        customBorder: shape,
-        onTap: s == null ? null : () => openLink(context, s.url),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          child: body,
         ),
       ),
     );
