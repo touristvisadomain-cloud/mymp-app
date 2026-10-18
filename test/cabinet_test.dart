@@ -192,6 +192,112 @@ void main() {
       },
     );
 
+    test('a ministry is found by its shortcuts: ICT, তথ্য, totto', () {
+      appLang.value = Lang.bn;
+      final json = _json('cabinet');
+      // The site sends each post's shortcuts (config/ministry-aliases.ts).
+      const aliases = {
+        'ডাক, টেলিযোগাযোগ ও তথ্যপ্রযুক্তি মন্ত্রণালয়': [
+          'ICT',
+          'আইসিটি',
+          'Telecom',
+        ],
+        'তথ্য ও সম্প্রচার মন্ত্রণালয়': [
+          'Information',
+          'তথ্য',
+          'Tottho',
+          'Tothyo',
+        ],
+        'রেলপথ মন্ত্রণালয়': ['Railways', 'Rail', 'রেল'],
+      };
+      for (final p in (json['posts'] as List).cast<Map<String, dynamic>>()) {
+        final a = aliases[p['ministryBn']];
+        if (a != null) p['ministryAliases'] = a;
+      }
+      final c = Cabinet.of(CabinetData.fromJson(json));
+      List<String> hits(String q) => [
+        for (final p in c.everyone)
+          if (p.matches(q.trim().toLowerCase()))
+            for (final m in p.ministries) m.name ?? '',
+      ];
+      const ict = 'ডাক, টেলিযোগাযোগ ও তথ্যপ্রযুক্তি মন্ত্রণালয়';
+      const info = 'তথ্য ও সম্প্রচার মন্ত্রণালয়';
+      expect(hits('ICT'), contains(ict));
+      expect(hits('ict'), isNot(contains(info)));
+      expect(hits('আইসিটি'), contains(ict));
+      expect(hits('তথ্য'), contains(info));
+      expect(hits('totto'), contains(info));
+      expect(hits('tothyo'), contains(info));
+      expect(hits('totto'), isNot(contains(ict)));
+      expect(hits('rail'), contains('রেলপথ মন্ত্রণালয়'));
+      expect(hits('rail'), isNot(contains('ধর্ম বিষয়ক মন্ত্রণালয়')));
+      expect(hits('zzzz'), isEmpty);
+      expect(hits('xx'), isEmpty);
+      expect(hits('আই সি টি'), contains(ict));
+      expect(searchFold('Tottho'), searchFold('totto'));
+    });
+
+    test('the Prime Minister however it is typed, best matches only', () {
+      final was = appLang.value;
+      addTearDown(() => appLang.value = was);
+      appLang.value = Lang.bn;
+      final json = _json('cabinet');
+      // As the site sends them (config/ministry-aliases.ts).
+      const ranks = {
+        'প্রধানমন্ত্রী': [
+          'Prime Minister',
+          'PM',
+          'Prodhan Montri',
+          'Prodhanmontri',
+          'Pradhan Mantri',
+          'প্রধান মন্ত্রী',
+        ],
+        'মন্ত্রী': ['Minister', 'Montri', 'Mantri'],
+        'প্রতিমন্ত্রী': ['State Minister', 'Protimontri'],
+        'উপদেষ্টা': ['Adviser', 'Advisor', 'Upodeshta'],
+      };
+      const ministries = {
+        'প্রাথমিক ও গণশিক্ষা মন্ত্রণালয়': [
+          'Primary and Mass Education',
+          'Primary Education',
+          'প্রাথমিক',
+        ],
+        'শিক্ষা মন্ত্রণালয়': ['Education', 'Education Minister', 'শিক্ষা'],
+      };
+      for (final p in (json['posts'] as List).cast<Map<String, dynamic>>()) {
+        p['titleAliases'] = ranks[p['title']] ?? const <String>[];
+        final m = ministries[p['ministryBn']];
+        if (m != null) p['ministryAliases'] = m;
+      }
+      final c = Cabinet.of(CabinetData.fromJson(json));
+      final pm = c.groups.first.people.single;
+      List<MinisterPerson> found(String q) => bestMatches(c.everyone, q);
+      for (final q in [
+        'Prime Minister',
+        'prime minister',
+        'Primie Minister',
+        'prime',
+        'PM',
+        'প্রধানমন্ত্রী',
+        'প্রধান মন্ত্রী',
+        'prodhan montri',
+        'profhan montri',
+        'prodhanmontri',
+      ]) {
+        expect(found(q), [pm], reason: q);
+      }
+      // "primary" is still the primary-education ministers, not the PM.
+      final primary = found('primary');
+      expect(primary, isNotEmpty);
+      expect(primary, isNot(contains(pm)));
+      expect(
+        found('state minister').every((p) => p.title == 'প্রতিমন্ত্রী'),
+        isTrue,
+      );
+      expect(found('zzzzz'), isEmpty);
+      expect(found(''), hasLength(c.everyone.length));
+    });
+
     test('adviser profiles parse in both languages', () {
       final bn = AdviserProfile.fromJson(_json('adviser-mahdi-amin'));
       expect(bn.posts, hasLength(4));

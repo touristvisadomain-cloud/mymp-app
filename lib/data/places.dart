@@ -8,6 +8,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api.dart';
@@ -521,5 +522,67 @@ class Places {
   static void reset() {
     _held.clear();
     _loading.clear();
+  }
+}
+
+/// Every union and the city thanas, for the place search
+/// (the site's /place-names.json, the same in both languages). The phone's
+/// copy is in hand at once when there is one, so a union is found on a train
+/// with no signal; a fresh list is fetched once a run and replaces it quietly.
+class PlaceNamesStore {
+  PlaceNamesStore._();
+
+  static const _key = 'place_names_v1';
+
+  /// The list in hand; null until the phone's copy or the first fetch
+  /// arrives. Screens listen, and search again when it changes.
+  static final names = ValueNotifier<PlaceNames?>(null);
+  static bool _started = false;
+  static DateTime? _failedAt;
+
+  /// Starts reading, once a run: the phone's copy, then the network. A fetch
+  /// that failed is tried again a minute later at the earliest.
+  static void ensure() {
+    final failed = _failedAt;
+    if (_started &&
+        (failed == null ||
+            DateTime.now().difference(failed) < const Duration(minutes: 1))) {
+      return;
+    }
+    _started = true;
+    _failedAt = null;
+    _load().ignore();
+  }
+
+  static Future<void> _load() async {
+    SharedPreferences? prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_key);
+      if (saved != null) {
+        final decoded = jsonDecode(saved);
+        if (decoded is Map<String, dynamic>) {
+          names.value = PlaceNames.fromJson(decoded);
+        }
+      }
+    } catch (_) {}
+    try {
+      final json = await Api.instance.getJson('/place-names.json');
+      final fresh = PlaceNames.fromJson(json);
+      if (fresh.unions.isEmpty) return;
+      names.value = fresh;
+      prefs ??= await SharedPreferences.getInstance();
+      await prefs.setString(_key, jsonEncode(json));
+    } catch (_) {
+      // No signal: the search by upazila and name works without it.
+      _failedAt = DateTime.now();
+    }
+  }
+
+  /// For tests: forget what was read.
+  static void reset() {
+    names.value = null;
+    _started = false;
+    _failedAt = null;
   }
 }

@@ -38,6 +38,14 @@ class CabinetRow {
   /// null on English for a title the site has no English for.
   final String? title;
   final String? ministryBn;
+
+  /// What people type for the ministry ("ICT", "তথ্য", "totto"): the
+  /// site's config/ministry-aliases.ts, for the search only, never shown.
+  final List<String> ministryAliases;
+
+  /// The rank as people type it ("Prime Minister", "prodhan montri"): search
+  /// only.
+  final List<String> titleAliases;
   final String? fromDate;
   final MemberBrief? member;
 
@@ -58,6 +66,8 @@ class CabinetRow {
   const CabinetRow({
     this.title,
     this.ministryBn,
+    this.ministryAliases = const [],
+    this.titleAliases = const [],
     this.fromDate,
     this.member,
     this.nameAlt,
@@ -74,6 +84,12 @@ class CabinetRow {
     return CabinetRow(
       title: _s(j['title']),
       ministryBn: _s(j['ministryBn']),
+      ministryAliases: j['ministryAliases'] is List
+          ? (j['ministryAliases'] as List).whereType<String>().toList()
+          : const [],
+      titleAliases: j['titleAliases'] is List
+          ? (j['titleAliases'] as List).whereType<String>().toList()
+          : const [],
       fromDate: _s(j['fromDate']),
       member: m is Map<String, dynamic> ? MemberBrief.fromJson(m) : null,
       nameAlt: m is Map<String, dynamic> ? _s(m['nameAlt']) : null,
@@ -429,6 +445,119 @@ String? fullPartyName(String? abbr) {
 Color partyColour(String? abbr) =>
     AppColors.party(abbr == 'BJEI' ? 'Jamaat' : abbr);
 
+/// A word as the site's search compares it (src/lib/search.ts normalise):
+/// Bangla past its spelling habits; Latin past case, doubled letters, "th"
+/// for "t" and the vowels a transliteration guesses at. So "totto", "tottho"
+/// and "Tottho" agree, and "ICT" is "ict".
+String searchFold(String s) {
+  final w = _foldBangla(s.toLowerCase()).replaceAll(RegExp(r'[\s,.\-()/]'), '');
+  if (RegExp(r'[ঀ-৿]').hasMatch(w)) return w;
+  return w
+      .replaceAll('ph', 'f')
+      .replaceAll(RegExp('[zj]'), 'j')
+      .replaceAll('v', 'b')
+      .replaceAll('w', 'o')
+      .replaceAllMapped(RegExp('([kgtdbc])h'), (m) => m[1]!)
+      .replaceAllMapped(RegExp(r'([a-z])\1+'), (m) => m[1]!)
+      .replaceAll(RegExp('[aeiou]+'), 'a');
+}
+
+/// Whether two words are at most one insertion, deletion or substitution apart.
+bool _withinOne(String a, String b) {
+  if (a == b) return true;
+  if ((a.length - b.length).abs() > 1) return false;
+  var i = 0;
+  while (i < a.length && i < b.length && a[i] == b[i]) {
+    i++;
+  }
+  if (a.length == b.length) return a.substring(i + 1) == b.substring(i + 1);
+  return a.length > b.length
+      ? a.substring(i + 1) == b.substring(i)
+      : a.substring(i) == b.substring(i + 1);
+}
+
+/// The site's matchTier (src/lib/search.ts): how well a query fits a short
+/// list of texts, as a tier, so the screen shows only the best ones:
+///   4  the whole query is one of the texts, past spelling ("Primie
+///      Minister" is "Prime Minister", "ict" is "ICT")
+///   3  every query word starts a word as typed ("prime", "তথ্য")
+///   2  ... once both are folded ("totto" and "Tottho")
+///   1  ... with one slipped key in a longer English word ("profhan")
+///   0  no fit
+/// Only the start of a word, and an English word under five letters only as
+/// typed: folded spellings are short ("zzzz" folds to "j", "rail" to "ral",
+/// the start of "religious"). Folding also makes "prime" look like
+/// "primary"; showing only the best tier gives "prime" the Prime Minister
+/// alone.
+int matchTier(String query, Iterable<String?> texts) {
+  final split = RegExp(r'[\s,.\-()/:]+');
+  final raw = query
+      .toLowerCase()
+      .split(split)
+      .where((w) => w.length >= 2)
+      .toList();
+  if (raw.isEmpty) return 0;
+  final keys = texts.whereType<String>().where((k) => k.isNotEmpty).toList();
+  bool shortLatin(String w) =>
+      w.length < 5 && RegExp(r'^[a-z0-9]+$').hasMatch(w);
+  final whole = searchFold(query);
+  if (whole.length >= 2 && keys.any((k) => searchFold(k) == whole)) return 4;
+  final textWords = [
+    for (final k in keys) ...k.toLowerCase().split(split),
+  ].where((w) => w.isNotEmpty).toList();
+  final folded = textWords.map(searchFold).where((w) => w.isNotEmpty).toList();
+  int tierOf(String w) {
+    if (textWords.any((x) => x.startsWith(w))) return 3;
+    if (shortLatin(w)) return 0;
+    final f = searchFold(w);
+    if (f.length >= 2 && folded.any((x) => x.startsWith(f))) return 2;
+    // One slipped key in a longer English word: "primie" for "prime",
+    // "profhan" for "prodhan".
+    final latin = RegExp(r'^[a-z]+$');
+    if (w.length >= 5 &&
+        latin.hasMatch(w) &&
+        textWords.any(
+          (x) =>
+              latin.hasMatch(x) &&
+              (_withinOne(
+                    w,
+                    x.length > w.length ? x.substring(0, w.length) : x,
+                  ) ||
+                  _withinOne(w, x)),
+        )) {
+      return 1;
+    }
+    return 0;
+  }
+
+  final tier = raw.map(tierOf).reduce((a, b) => a < b ? a : b);
+  if (tier > 0) return tier;
+  // "আই সি টি" for "আইসিটি": the whole query without spaces starts a text.
+  return whole.length >= 3 &&
+          !shortLatin(query.trim().toLowerCase()) &&
+          keys.any((k) => searchFold(k).startsWith(whole))
+      ? 2
+      : 0;
+}
+
+/// Whether a query fits a short list of texts at all.
+bool foldedMatch(String query, Iterable<String?> texts) =>
+    matchTier(query, texts) > 0;
+
+/// The people a search shows: those with the best tier among them (see
+/// matchTier), in their order. Everyone when the query is empty.
+List<MinisterPerson> bestMatches(Iterable<MinisterPerson> people, String q) {
+  final query = q.trim().toLowerCase();
+  if (query.isEmpty) return people.toList();
+  final scored = [for (final p in people) (p, p.tier(query))];
+  final best = scored.fold(0, (m, s) => s.$2 > m ? s.$2 : m);
+  if (best == 0) return const [];
+  return [
+    for (final s in scored)
+      if (s.$2 == best) s.$1,
+  ];
+}
+
 /// A ministry name for grouping and filtering: the list's typing slips (a
 /// sign typed twice, "বিজ্ঞানও প্রযুক্তি", a stray joiner) must not make a
 /// second ministry. The cards still show the list's own text. (The site's
@@ -460,7 +589,15 @@ class MinisterPortfolio {
   final String? name;
   final String key;
   final String? since;
-  const MinisterPortfolio({this.name, required this.key, this.since});
+
+  /// What people type for it ("ICT", "তথ্য"): search only.
+  final List<String> aliases;
+  const MinisterPortfolio({
+    this.name,
+    required this.key,
+    this.since,
+    this.aliases = const [],
+  });
 }
 
 /// One card: a person in one rank, with every ministry they hold in it.
@@ -480,6 +617,10 @@ class MinisterPerson {
   final String? sourceUrl;
   final List<MinisterPortfolio> ministries;
 
+  /// The rank as people type it ("Prime Minister", "prodhan montri"):
+  /// search only.
+  final List<String> titleAliases;
+
   MinisterPerson({
     required this.key,
     this.title,
@@ -493,6 +634,7 @@ class MinisterPerson {
     this.pending = false,
     this.sourceUrl,
     List<MinisterPortfolio>? ministries,
+    this.titleAliases = const [],
   }) : ministries = ministries ?? [];
 
   bool get isMp => member != null;
@@ -513,14 +655,34 @@ class MinisterPerson {
 
   /// A name, a ministry or a seat, as typed: any part of any matches. On
   /// English the Bangla name and seat match too.
-  bool matches(String q) {
-    if (q.isEmpty) return true;
+  ///
+  /// A ministry is also found by its shortcuts ("ICT", "তথ্য", "LGRD",
+  /// "totto"), and the rank by its own ("Prime Minister", "prodhan montri"),
+  /// compared the way the site's cabinet search compares them. The screen
+  /// shows only the best tier among the cards (bestMatches).
+  bool matches(String q) => tier(q) > 0;
+
+  /// How well [q] (lower case, trimmed) fits this card: matchTier's tiers,
+  /// with a plain part-of-the-text match counted as a word-start one.
+  int tier(String q) {
+    if (q.isEmpty) return 1;
     bool has(String? s) => s != null && s.toLowerCase().contains(q);
-    return has(name) ||
+    final plain =
+        has(name) ||
         has(nameAlt) ||
         has(seat) ||
         has(seatAlt) ||
-        ministries.any((m) => has(m.name));
+        ministries.any((m) => has(m.name) || m.aliases.any(has));
+    final t = matchTier(q, [
+      name,
+      nameAlt,
+      seat,
+      seatAlt,
+      title,
+      ...titleAliases,
+      for (final m in ministries) ...[m.name, ...m.aliases],
+    ]);
+    return plain && t < 3 ? 3 : t;
   }
 }
 
@@ -580,6 +742,7 @@ class Cabinet {
           photoUrl: m?.photoUrl ?? r.photoUrl,
           rankNote: r.rankNoteBn,
           sourceUrl: r.sourceUrl,
+          titleAliases: r.titleAliases,
         ),
       );
       p.ministries.add(
@@ -589,6 +752,7 @@ class Cabinet {
               ? '#${p.ministries.length}'
               : ministryKey(r.ministryBn!),
           since: t.date(r.fromDate),
+          aliases: r.ministryAliases,
         ),
       );
     }
