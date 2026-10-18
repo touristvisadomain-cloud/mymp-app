@@ -151,19 +151,21 @@ class _CabinetScreenState extends State<CabinetScreen>
         .where((m) => m.key == _ministry)
         .firstOrNull;
     final filtering = ministry != null || q.isNotEmpty;
+    // Only the best matches show: "prime" is the Prime Minister alone, not
+    // also the primary-education ministers that fold to look like it.
+    final found = bestMatches(
+      cabinet.everyone.where(
+        (p) =>
+            ministry == null || p.ministries.any((m) => m.key == ministry.key),
+      ),
+      q,
+    ).toSet();
     final shown = [
       for (final g in cabinet.groups)
         MinisterGroup(
           title: g.title,
           rank: g.rank,
-          people: g.people
-              .where(
-                (p) =>
-                    (ministry == null ||
-                        p.ministries.any((m) => m.key == ministry.key)) &&
-                    p.matches(q),
-              )
-              .toList(),
+          people: g.people.where(found.contains).toList(),
         ),
     ];
     final total = shown.fold(0, (n, g) => n + g.people.length);
