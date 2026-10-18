@@ -192,6 +192,51 @@ void main() {
       },
     );
 
+    test('a ministry is found by its shortcuts: ICT, তথ্য, totto', () {
+      appLang.value = Lang.bn;
+      final json = _json('cabinet');
+      // The site sends each post's shortcuts (config/ministry-aliases.ts).
+      const aliases = {
+        'ডাক, টেলিযোগাযোগ ও তথ্যপ্রযুক্তি মন্ত্রণালয়': [
+          'ICT',
+          'আইসিটি',
+          'Telecom',
+        ],
+        'তথ্য ও সম্প্রচার মন্ত্রণালয়': [
+          'Information',
+          'তথ্য',
+          'Tottho',
+          'Tothyo',
+        ],
+        'রেলপথ মন্ত্রণালয়': ['Railways', 'Rail', 'রেল'],
+      };
+      for (final p in (json['posts'] as List).cast<Map<String, dynamic>>()) {
+        final a = aliases[p['ministryBn']];
+        if (a != null) p['ministryAliases'] = a;
+      }
+      final c = Cabinet.of(CabinetData.fromJson(json));
+      List<String> hits(String q) => [
+        for (final p in c.everyone)
+          if (p.matches(q.trim().toLowerCase()))
+            for (final m in p.ministries) m.name ?? '',
+      ];
+      const ict = 'ডাক, টেলিযোগাযোগ ও তথ্যপ্রযুক্তি মন্ত্রণালয়';
+      const info = 'তথ্য ও সম্প্রচার মন্ত্রণালয়';
+      expect(hits('ICT'), contains(ict));
+      expect(hits('ict'), isNot(contains(info)));
+      expect(hits('আইসিটি'), contains(ict));
+      expect(hits('তথ্য'), contains(info));
+      expect(hits('totto'), contains(info));
+      expect(hits('tothyo'), contains(info));
+      expect(hits('totto'), isNot(contains(ict)));
+      expect(hits('rail'), contains('রেলপথ মন্ত্রণালয়'));
+      expect(hits('rail'), isNot(contains('ধর্ম বিষয়ক মন্ত্রণালয়')));
+      expect(hits('zzzz'), isEmpty);
+      expect(hits('xx'), isEmpty);
+      expect(hits('আই সি টি'), contains(ict));
+      expect(searchFold('Tottho'), searchFold('totto'));
+    });
+
     test('adviser profiles parse in both languages', () {
       final bn = AdviserProfile.fromJson(_json('adviser-mahdi-amin'));
       expect(bn.posts, hasLength(4));

@@ -38,6 +38,10 @@ class CabinetRow {
   /// null on English for a title the site has no English for.
   final String? title;
   final String? ministryBn;
+
+  /// What people type for the ministry ("ICT", "তথ্য", "totto"): the
+  /// site's config/ministry-aliases.ts, for the search only, never shown.
+  final List<String> ministryAliases;
   final String? fromDate;
   final MemberBrief? member;
 
@@ -58,6 +62,7 @@ class CabinetRow {
   const CabinetRow({
     this.title,
     this.ministryBn,
+    this.ministryAliases = const [],
     this.fromDate,
     this.member,
     this.nameAlt,
@@ -74,6 +79,9 @@ class CabinetRow {
     return CabinetRow(
       title: _s(j['title']),
       ministryBn: _s(j['ministryBn']),
+      ministryAliases: j['ministryAliases'] is List
+          ? (j['ministryAliases'] as List).whereType<String>().toList()
+          : const [],
       fromDate: _s(j['fromDate']),
       member: m is Map<String, dynamic> ? MemberBrief.fromJson(m) : null,
       nameAlt: m is Map<String, dynamic> ? _s(m['nameAlt']) : null,
@@ -429,6 +437,58 @@ String? fullPartyName(String? abbr) {
 Color partyColour(String? abbr) =>
     AppColors.party(abbr == 'BJEI' ? 'Jamaat' : abbr);
 
+/// A word as the site's search compares it (src/lib/search.ts normalise):
+/// Bangla past its spelling habits; Latin past case, doubled letters, "th"
+/// for "t" and the vowels a transliteration guesses at. So "totto", "tottho"
+/// and "Tottho" agree, and "ICT" is "ict".
+String searchFold(String s) {
+  final w = _foldBangla(s.toLowerCase()).replaceAll(RegExp(r'[\s,.\-()/]'), '');
+  if (RegExp(r'[ঀ-৿]').hasMatch(w)) return w;
+  return w
+      .replaceAll('ph', 'f')
+      .replaceAll(RegExp('[zj]'), 'j')
+      .replaceAll('v', 'b')
+      .replaceAll('w', 'o')
+      .replaceAllMapped(RegExp('([kgtdbc])h'), (m) => m[1]!)
+      .replaceAllMapped(RegExp(r'([a-z])\1+'), (m) => m[1]!)
+      .replaceAll(RegExp('[aeiou]+'), 'a');
+}
+
+/// The site's foldedMatch (src/lib/search.ts): every query word starts some
+/// word of the texts, or the whole query without spaces starts one of them
+/// without spaces ("আই সি টি" finds "আইসিটি"). Only the start of a word, and
+/// an English word under five letters only as typed: folded spellings are
+/// short ("zzzz" folds to "j", "rail" to "ral", the start of "religious") and
+/// would match almost anything. Longer ones fold, so "totto" finds "Tottho".
+bool foldedMatch(String query, Iterable<String?> texts) {
+  final split = RegExp(r'[\s,.\-()/]+');
+  final raw = query
+      .toLowerCase()
+      .split(split)
+      .where((w) => w.length >= 2)
+      .toList();
+  if (raw.isEmpty) return false;
+  final keys = texts.whereType<String>().toList();
+  final textWords = [
+    for (final k in keys) ...k.toLowerCase().split(split),
+  ].where((w) => w.isNotEmpty).toList();
+  final folded = textWords.map(searchFold).where((w) => w.isNotEmpty).toList();
+  bool shortLatin(String w) =>
+      w.length < 5 && RegExp(r'^[a-z0-9]+$').hasMatch(w);
+  bool one(String w) {
+    if (textWords.any((x) => x.startsWith(w))) return true;
+    if (shortLatin(w)) return false;
+    final f = searchFold(w);
+    return f.length >= 2 && folded.any((x) => x.startsWith(f));
+  }
+
+  if (raw.every(one)) return true;
+  final whole = searchFold(query);
+  return whole.length >= 3 &&
+      !shortLatin(query.trim().toLowerCase()) &&
+      keys.any((k) => searchFold(k).startsWith(whole));
+}
+
 /// A ministry name for grouping and filtering: the list's typing slips (a
 /// sign typed twice, "বিজ্ঞানও প্রযুক্তি", a stray joiner) must not make a
 /// second ministry. The cards still show the list's own text. (The site's
@@ -460,7 +520,15 @@ class MinisterPortfolio {
   final String? name;
   final String key;
   final String? since;
-  const MinisterPortfolio({this.name, required this.key, this.since});
+
+  /// What people type for it ("ICT", "তথ্য"): search only.
+  final List<String> aliases;
+  const MinisterPortfolio({
+    this.name,
+    required this.key,
+    this.since,
+    this.aliases = const [],
+  });
 }
 
 /// One card: a person in one rank, with every ministry they hold in it.
@@ -513,14 +581,27 @@ class MinisterPerson {
 
   /// A name, a ministry or a seat, as typed: any part of any matches. On
   /// English the Bangla name and seat match too.
+  ///
+  /// A ministry is also found by its shortcuts ("ICT", "তথ্য", "LGRD",
+  /// "totto"), compared the way the site's cabinet search compares them:
+  /// past case, spaces, doubled letters and the vowels of a transliteration.
   bool matches(String q) {
     if (q.isEmpty) return true;
     bool has(String? s) => s != null && s.toLowerCase().contains(q);
-    return has(name) ||
+    if (has(name) ||
         has(nameAlt) ||
         has(seat) ||
         has(seatAlt) ||
-        ministries.any((m) => has(m.name));
+        ministries.any((m) => has(m.name) || m.aliases.any(has))) {
+      return true;
+    }
+    return foldedMatch(q, [
+      name,
+      nameAlt,
+      seat,
+      seatAlt,
+      for (final m in ministries) ...[m.name, ...m.aliases],
+    ]);
   }
 }
 
@@ -589,6 +670,7 @@ class Cabinet {
               ? '#${p.ministries.length}'
               : ministryKey(r.ministryBn!),
           since: t.date(r.fromDate),
+          aliases: r.ministryAliases,
         ),
       );
     }
