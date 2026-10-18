@@ -58,11 +58,17 @@ class _MembersScreenState extends State<MembersScreen>
     // the background it replaces what is on screen in place: same scroll
     // position, same search, keyboard still open.
     Api.instance.bootstrap.addListener(_onFresh);
+    PlaceNamesStore.names.addListener(_onNames);
     _loadPlaces();
     _scroll.addListener(() {
       final gone = _scroll.hasClients && _scroll.offset > 170;
       if (gone != _headerGone) setState(() => _headerGone = gone);
     });
+  }
+
+  /// The union and thana list arrived or was renewed: search again.
+  void _onNames() {
+    if (mounted && _query.trim().isNotEmpty) setState(() {});
   }
 
   void _onFresh() {
@@ -101,6 +107,7 @@ class _MembersScreenState extends State<MembersScreen>
   @override
   void dispose() {
     Api.instance.bootstrap.removeListener(_onFresh);
+    PlaceNamesStore.names.removeListener(_onNames);
     _scroll.dispose();
     _search.dispose();
     super.dispose();
@@ -148,6 +155,22 @@ class _MembersScreenState extends State<MembersScreen>
       (_district == null || m.districtBn == _district) &&
       (_kind == null || (_kind == 'reserved') == m.reserved);
 
+  /// Many unions share a name: with two or more of them found, an example of
+  /// how to pick one, the name and an upazila among them.
+  String? _sharedName(List<SeatMatch> hits) {
+    final unions = [
+      for (final h in hits)
+        if (h.kind == MatchKind.union && h.upazila != null) h,
+    ];
+    if ({for (final h in unions) h.place}.length < 2) return null;
+    final name = _query.trim().replaceFirst(
+      RegExp(r'\s*(ইউনিয়ন|union)\s*$', caseSensitive: false),
+      '',
+    );
+    final first = unions.first;
+    return '$name ${t.en ? (first.upazilaEn ?? first.upazila) : first.upazila}';
+  }
+
   /// The seats of the place the query names, under the same filters as the
   /// list: a vacant seat only while no party is chosen.
   List<SeatMatch> _placeHits() {
@@ -156,7 +179,12 @@ class _MembersScreenState extends State<MembersScreen>
       return const [];
     }
     final hits = <SeatMatch>[];
-    for (final h in findPlaces(_query, places.finderSeats, places.upazilaEn)) {
+    for (final h in findPlaces(
+      _query,
+      places.finderSeats,
+      places.upazilaEn,
+      names: PlaceNamesStore.names.value,
+    )) {
       final m = h.seat.member;
       if (m != null ? _keep(m) : _party == null && _district == null) {
         hits.add(h);
@@ -269,6 +297,8 @@ class _MembersScreenState extends State<MembersScreen>
                       t('আপনার এলাকার এমপি', 'The MP for your area'),
                     ),
                   ),
+                  if (_sharedName(hits) case final example?)
+                    SliverToBoxAdapter(child: _SharedNameNote(example)),
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSizes.pagePad,
@@ -292,10 +322,15 @@ class _MembersScreenState extends State<MembersScreen>
                     child: EmptyState(
                       icon: Icons.search_off_rounded,
                       title: t('কাউকে পাওয়া যায়নি', 'No one found'),
-                      body: t(
-                        'নাম, আসন বা জেলা দিয়ে আবার খুঁজে দেখুন।',
-                        'Try searching again by name, seat or district.',
-                      ),
+                      body: _query.trim().isEmpty
+                          ? t(
+                              'নাম, আসন বা জেলা দিয়ে আবার খুঁজে দেখুন।',
+                              'Try searching again by name, seat or district.',
+                            )
+                          : t(
+                              'গ্রাম বা মহল্লার নামে খোঁজা যায় না: ইউনিয়ন, উপজেলা বা থানার নাম লিখুন। নাম, আসন বা জেলা দিয়েও খোঁজা যায়।',
+                              'Villages and neighbourhoods are not searchable: type the union, upazila or thana instead. A name, seat or district works too.',
+                            ),
                       actionLabel: t('সব দেখুন', 'Show all'),
                       onAction: _clearAll,
                     ),
@@ -362,10 +397,14 @@ class _MembersScreenState extends State<MembersScreen>
           HeaderSearchField(
             controller: _search,
             hint: t(
-              'নাম, আসন, জেলা বা উপজেলা (বাংলা/English)',
-              'Name, seat, district or upazila',
+              'নাম, আসন, জেলা, উপজেলা, ইউনিয়ন বা থানা',
+              'Name, seat, district, upazila, union or thana',
             ),
-            onChanged: (v) => setState(() => _query = v),
+            onChanged: (v) {
+              // The union and thana list, once someone searches.
+              if (v.trim().isNotEmpty) PlaceNamesStore.ensure();
+              setState(() => _query = v);
+            },
             onClear: () => setState(() {
               _search.clear();
               _query = '';
@@ -740,6 +779,34 @@ class _GroupLabel extends StatelessWidget {
   }
 }
 
+/// Under "The MP for your area" when several unions share the typed name:
+/// how to find one's own, with an example from the answers.
+class _SharedNameNote extends StatelessWidget {
+  final String example;
+  const _SharedNameNote(this.example);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(
+      AppSizes.pagePad,
+      0,
+      AppSizes.pagePad,
+      10,
+    ),
+    child: Text(
+      t(
+        'এই নামে কয়েকটি ইউনিয়ন আছে। নিজেরটি খুঁজতে সাথে উপজেলা বা জেলার নাম লিখুন, যেমন "$example"।',
+        'Several unions have this name. Add the upazila or district to find yours, for example "$example".',
+      ),
+      style: const TextStyle(
+        fontSize: 13,
+        height: 1.4,
+        color: AppColors.inkSoft,
+      ),
+    ),
+  );
+}
+
 /// A seat found by the place a reader typed: its member (or that it is
 /// vacant), the seat and party, what kind of place matched, and a note when
 /// the seat holds only part of it.
@@ -753,20 +820,36 @@ class _PlaceTile extends StatelessWidget {
     MatchKind.upazila => t('উপজেলা', 'Upazila'),
     MatchKind.union => t('ইউনিয়ন', 'Union'),
     MatchKind.ward => t('সিটি ওয়ার্ড', 'City ward'),
+    MatchKind.thana => t('থানা', 'Thana'),
     MatchKind.place => t('এলাকা', 'Area'),
   };
+
+  /// Why a seat may hold only part of the place.
+  static String? _partNote(SeatMatch m) {
+    if (!m.partial) return null;
+    return switch (m.kind) {
+      MatchKind.thana => t(
+        'থানার কিছু এলাকা পাশের আসনেও থাকতে পারে',
+        'The thana may reach into a neighbouring seat',
+      ),
+      MatchKind.union => t(
+        'এখন সিটি কর্পোরেশনে, এই আসনগুলোতে ভাগ',
+        'Now in the city corporation, shared by these seats',
+      ),
+      MatchKind.ward => t(
+        'সিটির একাংশ এই আসনে',
+        'Part of the city is in this seat',
+      ),
+      _ => t('উপজেলার একাংশ এই আসনে', 'Part of the upazila is in this seat'),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
     final seat = match.seat;
     final m = seat.member;
-    final ward = match.kind == MatchKind.ward;
-    final partial = match.partial
-        ? t(
-            '${ward ? 'সিটির' : 'উপজেলার'} একাংশ এই আসনে',
-            'Part of the ${ward ? 'city' : 'upazila'} is in this seat',
-          )
-        : null;
+    final partial = _partNote(match);
+    final place = t.en ? match.placeEn : match.place;
     final title =
         m?.nameBn ??
         t(
@@ -774,6 +857,7 @@ class _PlaceTile extends StatelessWidget {
           '${seat.seatLabel}: the seat is now vacant',
         );
     final sub = [
+      ?place,
       if (m != null || !t.en) seat.seatLabel,
       ?m?.partyBn,
       ?partial,

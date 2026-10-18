@@ -12,7 +12,8 @@
 /// mymp repo), ported line for line: which seat an upazila, a union or a city
 /// ward is in, read from the Election Commission's boundary text clause by
 /// clause, so a union listed as an exception is not taken as part of the seat
-/// that excludes it.
+/// that excludes it; and, from the site's place list (/place-names.json), every
+/// union the text does not name and the city thanas.
 library;
 
 import 'models.dart';
@@ -431,7 +432,7 @@ class FinderSeat {
   }) : seatLabel = seatLabel ?? seat;
 }
 
-enum MatchKind { seat, district, upazila, union, ward, place }
+enum MatchKind { seat, district, upazila, union, ward, thana, place }
 
 class SeatMatch {
   final FinderSeat seat;
@@ -444,7 +445,100 @@ class SeatMatch {
   /// but some).
   final bool partial;
   final int score;
-  const SeatMatch(this.seat, this.kind, this.clause, this.partial, this.score);
+
+  /// For a union or thana found through the place list rather than the
+  /// boundary text: where it is ("বাবরা হাচলা ইউনিয়ন, কালিয়া উপজেলা"), since
+  /// many unions share a name. [placeEn] on English screens.
+  final String? place;
+  final String? placeEn;
+
+  /// A listed union's upazila, to say how to tell apart unions that share a
+  /// name.
+  final String? upazila;
+  final String? upazilaEn;
+
+  const SeatMatch(
+    this.seat,
+    this.kind,
+    this.clause,
+    this.partial,
+    this.score, {
+    this.place,
+    this.placeEn,
+    this.upazila,
+    this.upazilaEn,
+  });
+}
+
+/// A union of the place list: [bn], [en], its upazila as the boundary text
+/// spells it, its district, the upazila in English, and for a union since
+/// taken into a city corporation the slugs of the seats that share the city.
+typedef PlaceUnion = ({
+  String bn,
+  String en,
+  String upazila,
+  String district,
+  String? upazilaEn,
+  List<String>? inCity,
+});
+
+/// A city thana of the place list, placed on the seat map by OpenStreetMap's
+/// points for it; [partial]: it may reach into a neighbouring seat.
+typedef PlaceThana = ({String bn, String en, List<String> slugs, bool partial});
+
+/// The places the boundary text does not name (the site's
+/// public/place-names.json, built by scripts/build-place-names.ts). The
+/// Election Commission names a union only where a seat holds part of an
+/// upazila; every other union is found through its upazila. Many unions share
+/// a name, so "চরপাতা দৌলতখান" (a union, then its upazila or district) narrows it.
+class PlaceNames {
+  final List<PlaceUnion> unions;
+  final List<PlaceThana> thanas;
+  const PlaceNames({this.unions = const [], this.thanas = const []});
+
+  /// Read defensively: a row the app does not understand is skipped.
+  factory PlaceNames.fromJson(Map<String, dynamic> j) {
+    String? s(dynamic v) => v is String ? v : null;
+    final unions = <PlaceUnion>[];
+    if (j['unions'] is List) {
+      for (final r in j['unions'] as List) {
+        if (r is! List || r.length < 4) continue;
+        final bn = s(r[0]), en = s(r[1]), up = s(r[2]), d = s(r[3]);
+        if (bn == null || en == null || up == null || d == null) continue;
+        unions.add((
+          bn: bn,
+          en: en,
+          upazila: up,
+          district: d,
+          upazilaEn: r.length > 4 ? s(r[4]) : null,
+          inCity: r.length > 5 && r[5] is List
+              ? [
+                  for (final x in r[5] as List)
+                    if (x is String) x,
+                ]
+              : null,
+        ));
+      }
+    }
+    final thanas = <PlaceThana>[];
+    if (j['thanas'] is List) {
+      for (final r in j['thanas'] as List) {
+        if (r is! List || r.length < 4) continue;
+        final bn = s(r[0]), en = s(r[1]);
+        if (bn == null || en == null || r[2] is! List) continue;
+        thanas.add((
+          bn: bn,
+          en: en,
+          slugs: [
+            for (final x in r[2] as List)
+              if (x is String) x,
+          ],
+          partial: r[3] == true,
+        ));
+      }
+    }
+    return PlaceNames(unions: unions, thanas: thanas);
+  }
 }
 
 const _bnDigitsPlace = '০১২৩৪৫৬৭৮৯';
@@ -477,8 +571,10 @@ final _notWord = RegExp(r'[^\p{L}\p{M}\p{N}]+', unicode: true);
 /// Folded words: one spelling for the many, Latin digits as Bangla,
 /// punctuation as space.
 String placeFold(String s) =>
-    // লক্ষ্মীপুর is written লক্ষীপুর in the boundary text.
+    // লক্ষ্মীপুর is written লক্ষীপুর in the boundary text. ঙ and ং are one
+    // sound: the text writes রাংগুনিয়া and টাংগাইল, other lists রাঙ্গুনিয়া.
     _foldBangla(_nfcBn(s).replaceAll('ক্ষ্ম', 'ক্ষ'))
+        .replaceAll('ঙ', 'ং')
         .replaceAllMapped(
           RegExp(r'\d'),
           (m) => _bnDigitsPlace[int.parse(m[0]!)],
@@ -576,60 +672,77 @@ List<String> _split2(String s) => s.split(RegExp('[ঃ:]')).take(2).toList();
 final _clauseMark = RegExp('\\([কখগঘঙচছজঝঞটঠ]\\)');
 final _clauseEdge = RegExp(r'^[,;।\s]+|[,;।\s]+$');
 
-_Clause _clause(String text) {
+final _except = RegExp('ব্যা?তীত');
+final _andThen = RegExp(r'^(.+?)\s+এবং\s+(.+)$');
+
+List<_Clause> _clause(String text) {
   final isWard = _placeWords(text).any(_wardWords.contains);
-  if (text.contains('ব্যতীত')) {
+  if (_except.hasMatch(text)) {
     // "নিম্নলিখিত ইউনিয়ন সমূহ ব্যতীত কেরানিগঞ্জ উপজেলাঃ(১) জিনজিরা, …"
     final p = _split2(text);
-    final upazila = p[0].replaceFirst(RegExp('.*ব্যতীত'), '');
-    return _Clause(
-      text,
-      [upazila],
-      [p.length > 1 ? p[1] : ''],
-      MatchKind.upazila,
-      true,
-    );
+    final upazila = p[0].replaceFirst(RegExp('.*ব্যা?তীত'), '');
+    return [
+      _Clause(
+        text,
+        [upazila],
+        [p.length > 1 ? p[1] : ''],
+        MatchKind.upazila,
+        true,
+      ),
+    ];
   }
   if (text.contains('নিম্নলিখিত')) {
     // "সাভার উপজেলার নিম্নলিখিত ইউনিয়ন সমূহঃ (১) আমিনবাজার, …": only these
     // unions.
     final p = _split2(text);
-    return _Clause(
-      text,
-      [p[0], p.length > 1 ? p[1] : ''],
-      const [],
-      MatchKind.union,
-      true,
-    );
+    final list = p.length > 1 ? p[1] : '';
+    // "পলাশ এবং নরসিংদী সদর উপজেলার নিম্নলিখিত …": a whole upazila, then the
+    // one the list belongs to.
+    final m = _andThen.firstMatch(p[0]);
+    if (m != null && !m[1]!.contains('নিম্নলিখিত')) {
+      return [
+        _Clause(m[1]!, [m[1]!], const [], MatchKind.upazila, false),
+        _Clause(text, [m[2]!, list], const [], MatchKind.union, true),
+      ];
+    }
+    return [
+      _Clause(text, [p[0], list], const [], MatchKind.union, true),
+    ];
   }
   // "সাভার উপজেলার কাউন্দিয়া ইউনিয়ন": named unions of an upazila, without
   // the word নিম্নলিখিত.
   final genitive = text.indexOf('উপজেলার');
   if (genitive > 0 &&
       placeFold(text.substring(genitive)).contains(placeFold('ইউনিয়ন'))) {
-    return _Clause(
-      text,
-      [text.substring(0, genitive), text.substring(genitive)],
-      const [],
-      MatchKind.union,
-      true,
-    );
+    return [
+      _Clause(
+        text,
+        [text.substring(0, genitive), text.substring(genitive)],
+        const [],
+        MatchKind.union,
+        true,
+      ),
+    ];
   }
-  return _Clause(
-    text,
-    [text],
-    const [],
-    isWard ? MatchKind.ward : MatchKind.upazila,
-    false,
-  );
+  return [
+    _Clause(
+      text,
+      [text],
+      const [],
+      isWard ? MatchKind.ward : MatchKind.upazila,
+      false,
+    ),
+  ];
 }
 
 /// "(ক) …, (খ) …" into its clauses; a boundary with no markers is one clause.
+/// "সুবর্ণচরএবং": the text sometimes runs a name into the এবং after it.
 List<_Clause> _clausesOf(String boundary) => boundary
+    .replaceAllMapped(RegExp(r'(\S)এবং'), (m) => '${m[1]} এবং')
     .split(_clauseMark)
     .map((p) => p.trim().replaceAll(_clauseEdge, ''))
     .where((p) => p.isNotEmpty)
-    .map(_clause)
+    .expand(_clause)
     .toList();
 
 const _rank = {
@@ -638,20 +751,321 @@ const _rank = {
   MatchKind.union: 70,
   MatchKind.ward: 65,
   MatchKind.upazila: 60,
+  MatchKind.thana: 55,
   MatchKind.place: 40,
 };
 
+/// A union found through the place list ranks below an upazila and a city
+/// thana of the same name: শিবপুর the upazila, and মিরপুর the Dhaka thana,
+/// before the many unions called so.
+const _listedUnion = 52;
+
+int _byScore(SeatMatch a, SeatMatch b) {
+  final s = b.score.compareTo(a.score);
+  return s != 0 ? s : a.seat.no.compareTo(b.seat.no);
+}
+
 /// Seats that hold the place the person typed (in Bangla; see [toBangla]),
 /// best first. A seat that holds the place whole ranks above one that holds
-/// a part of it.
+/// a part of it. With [names], a union or thana the boundary text does not
+/// name too.
 List<SeatMatch> findSeats(
   String query,
   List<FinderSeat> seats, {
   int limit = 12,
+  PlaceNames? names,
 }) {
   // Whole words first; a half-typed last word only when nothing matches whole.
   final exact = _searchSeats(query, seats, limit, false);
-  return exact.isNotEmpty ? exact : _searchSeats(query, seats, limit, true);
+  final listed = names != null
+      ? _byPlaceName(query, seats, names)
+      : const <SeatMatch>[];
+  final seen = {for (final m in exact) m.seat.no};
+  final both = [
+    ...exact,
+    for (final m in listed)
+      if (seen.add(m.seat.no)) m,
+  ];
+  if (both.isNotEmpty) return (both..sort(_byScore)).take(limit).toList();
+  return _searchSeats(query, seats, limit, true);
+}
+
+/// Folded words with the words that only name a kind of place dropped.
+List<String> _nameWords(String s) =>
+    _placeWords(s).where((w) => !_kindWords.contains(w)).toList();
+
+/// Whether a listed name (a union in a clause's list) is this union, past
+/// small spelling differences.
+bool _sameName(String a, String b) {
+  final x = placeFold(a).replaceAll(' ', '');
+  final y = placeFold(b).replaceAll(' ', '');
+  if (x == y) return true;
+  return x.length >= 4 && y.length >= 4 && _plainEditDistance(x, y) <= 1;
+}
+
+final _kindInList = RegExp(_nfcBn('উপজেলার?|ইউনিয়ন|সমূহ'));
+final _listSplit = RegExp(r'[,;।ঃ:-]|\sও\s|\sএবং\s');
+final _listEdge = RegExp(r'^(?:ও|এবং)\s+|\s+(?:ও|এবং)$');
+
+/// The names in a clause's list: "(১) জিনজিরা, (২)আগানগর … ও(৫) শুভাট্যা".
+List<String> _listNames(String list) => _nfcBn(list)
+    .replaceAll(RegExp(r'\([০-৯\d]+\)'), ',')
+    .replaceAll(_kindInList, ',')
+    .split(_listSplit)
+    .map((x) => x.trim().replaceAll(_listEdge, '').trim())
+    .where((x) => x.length > 1)
+    .toList();
+
+/// [_hasRun], past one letter's difference in a longer word: the text writes
+/// রানিসংকাইল and রানিশংকাইল for one upazila.
+bool _nearRun(List<String> hay, List<String> needle) {
+  if (_hasRun(hay, needle, false)) return true;
+  bool near(String h, String n) =>
+      h == n || (n.length >= 4 && _plainEditDistance(h, n) <= 1);
+  for (var i = 0; i + needle.length <= hay.length; i++) {
+    var ok = true;
+    for (var j = 0; j < needle.length; j++) {
+      if (!near(hay[i + j], needle[j])) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+/// Seats holding a union of [upazila] (as the boundary text spells it), read
+/// the way the text means it.
+List<FinderSeat> seatsForUnion(
+  String name,
+  String upazila,
+  String district,
+  List<FinderSeat> seats,
+) {
+  final up = _nameWords(upazila);
+  final out = <FinderSeat>[];
+  bool inDistrict(FinderSeat s) =>
+      district.isEmpty || _sameName(s.district, district);
+  for (final seat in seats) {
+    final boundary = seat.boundary;
+    if (boundary == null || !inDistrict(seat)) continue;
+    for (final c in _clausesOf(boundary)) {
+      if (c.kind == MatchKind.ward) continue;
+      if (c.kind == MatchKind.union) {
+        // Only the listed unions of the upazila.
+        if (_nearRun(_nameWords(c.holds[0]), up) &&
+            _listNames(
+              c.holds.length > 1 ? c.holds[1] : '',
+            ).any((n) => _sameName(n, name))) {
+          out.add(seat);
+          break;
+        }
+        continue;
+      }
+      if (c.partial) {
+        // The upazila except the listed unions.
+        if (_nearRun(_nameWords(c.holds[0]), up) &&
+            !_listNames(
+              c.except.isNotEmpty ? c.except[0] : '',
+            ).any((n) => _sameName(n, name))) {
+          out.add(seat);
+          break;
+        }
+        continue;
+      }
+      if (_nearRun(_nameWords(c.text), up)) {
+        out.add(seat);
+        break;
+      }
+    }
+  }
+  if (out.isNotEmpty) return out;
+  // The hill districts are described whole ("রাংগামাটি পার্বত্য জেলা"),
+  // without their upazilas: a clause that is the district and nothing else.
+  final dw = _nameWords(district).join(' ');
+  final hill = placeFold('পার্বত্য');
+  return [
+    for (final s in seats)
+      if (inDistrict(s) &&
+          s.boundary != null &&
+          dw.isNotEmpty &&
+          _clausesOf(s.boundary!).any(
+            (c) => _nameWords(c.text).where((x) => x != hill).join(' ') == dw,
+          ))
+        s,
+  ];
+}
+
+String _latin(String s) => s.toLowerCase().replaceAll(RegExp('[^a-z0-9]+'), '');
+
+/// The place list's names folded once, not on every keystroke.
+final _prepared =
+    Expando<
+      ({
+        List<List<String>> unions,
+        List<String> unionsEn,
+        List<List<String>> thanas,
+        List<String> thanasEn,
+      })
+    >();
+
+final _latinKind = RegExp(
+  r'\b(union|thana|upazila|upazilla|police station|ps)\b',
+);
+
+/// Unions and thanas from the place list whose name is the query.
+List<SeatMatch> _byPlaceName(
+  String query,
+  List<FinderSeat> seats,
+  PlaceNames names,
+) {
+  final q = _nameWords(query);
+  if (q.isEmpty || q.join().length < 2) return const [];
+  final pre = _prepared[names] ??= (
+    unions: [for (final u in names.unions) _nameWords(u.bn)],
+    unionsEn: [for (final u in names.unions) _latin(u.en)],
+    thanas: [for (final th in names.thanas) _nameWords(th.bn)],
+    thanasEn: [for (final th in names.thanas) _latin(th.en)],
+  );
+  final english = RegExp('[a-z]', caseSensitive: false).hasMatch(query);
+  final typedWords = query
+      .toLowerCase()
+      .replaceAll(_latinKind, ' ')
+      .split(RegExp('[^a-z0-9]+'))
+      .where((w) => w.isNotEmpty)
+      .toList();
+  final typed = typedWords.join();
+  bool sameLatin(String a, String key) =>
+      key.isNotEmpty &&
+      (key == a || (a.length >= 6 && _plainEditDistance(a, key) <= 1));
+  // "kalatia" is কলাতিয়া, not also করটিয়া a letter away: a name a letter
+  // off counts only when none is exact.
+  final exactLatin =
+      english && (pre.unionsEn.contains(typed) || pre.thanasEn.contains(typed));
+  bool sameName(String a, String key) =>
+      exactLatin ? key.isNotEmpty && key == a : sameLatin(a, key);
+
+  // The name, then perhaps words naming where it is: "চরপাতা দৌলতখান",
+  // "charpata bhola".
+  bool isName(List<String> w, String key, [List<String> Function()? where]) {
+    if (english) {
+      if (sameName(typed, key)) return true;
+      if (where == null) return false;
+      // The union's own words, then its upazila's or district's.
+      for (var n = 1; n < typedWords.length; n++) {
+        if (!sameName(typedWords.take(n).join(), key)) continue;
+        final rest = typedWords.skip(n).join();
+        if (where().any(
+          (x) =>
+              sameLatin(rest, _latin(x)) ||
+              (rest.length >= 4 && _latin(x).startsWith(rest)),
+        )) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (q.length < w.length) return false;
+    for (var i = 0; i < w.length; i++) {
+      if (w[i] != q[i]) return false;
+    }
+    if (q.length == w.length) return true;
+    if (where == null) return false;
+    final rest = q.sublist(w.length);
+    return where().any(
+      (x) =>
+          _nearRun(_nameWords(x), rest) || _hasRun(_nameWords(x), rest, true),
+    );
+  }
+
+  String districtEn(String bn) {
+    final f = placeFold(bn);
+    for (final s in seats) {
+      if (placeFold(s.district) == f) return s.districtEn ?? '';
+    }
+    return '';
+  }
+
+  final out = <SeatMatch>[];
+  final bySlug = {for (final s in seats) s.slug: s};
+  for (final (i, u) in names.unions.indexed) {
+    if (!isName(
+      pre.unions[i],
+      pre.unionsEn[i],
+      () => english
+          ? [u.upazilaEn ?? '', districtEn(u.district)]
+          : [u.upazila, u.district],
+    )) {
+      continue;
+    }
+    final place = '${u.bn} ইউনিয়ন, ${u.upazila} উপজেলা';
+    final placeEn = '${u.en} union, ${u.upazilaEn ?? u.upazila}';
+    final inCity = u.inCity;
+    if (inCity != null) {
+      // Now city wards the text does not tie to the union: each seat that
+      // shares the city may hold it.
+      for (final slug in inCity) {
+        final seat = bySlug[slug];
+        if (seat == null) continue;
+        out.add(
+          SeatMatch(
+            seat,
+            MatchKind.union,
+            null,
+            true,
+            _listedUnion - 10,
+            place: place,
+            placeEn: placeEn,
+            upazila: u.upazila,
+            upazilaEn: u.upazilaEn,
+          ),
+        );
+      }
+      continue;
+    }
+    for (final seat in seatsForUnion(u.bn, u.upazila, u.district, seats)) {
+      out.add(
+        SeatMatch(
+          seat,
+          MatchKind.union,
+          null,
+          false,
+          _listedUnion,
+          place: place,
+          placeEn: placeEn,
+          upazila: u.upazila,
+          upazilaEn: u.upazilaEn,
+        ),
+      );
+    }
+  }
+  for (final (i, th) in names.thanas.indexed) {
+    if (!isName(pre.thanas[i], pre.thanasEn[i])) continue;
+    for (final slug in th.slugs) {
+      final seat = bySlug[slug];
+      if (seat == null) continue;
+      // Every city thana is marked partial, so being partial costs it no rank.
+      out.add(
+        SeatMatch(
+          seat,
+          MatchKind.thana,
+          null,
+          th.partial,
+          _rank[MatchKind.thana]!,
+          place: '${th.bn} থানা',
+          placeEn: '${th.en} thana',
+        ),
+      );
+    }
+  }
+  // One line a seat: the same union name in two upazilas of one seat is one
+  // answer.
+  final seen = <int>{};
+  return [
+    for (final m in out)
+      if (seen.add(m.seat.no)) m,
+  ];
 }
 
 final _bnNumber = RegExp(r'^[০-৯]+$');
@@ -864,17 +1278,52 @@ String toBangla(String query, List<(String, String)> upazilas) {
 }
 
 /// The seats of the place a reader typed, in either script: an upazila, a
-/// union or a city ward. Seats and districts by name are left to
+/// union, a thana or a city ward. Seats and districts by name are left to
 /// [MemberSearch], as the website leaves them to its own index.
 List<SeatMatch> findPlaces(
   String query,
   List<FinderSeat> seats,
   List<(String, String)> upazilaEn, {
-  int limit = 6,
+  int limit = 8,
+  PlaceNames? names,
 }) {
   final q = query.trim();
   if (q.length < 2) return const [];
-  return findSeats(toBangla(q, upazilaEn), seats, limit: limit)
+  // An English name that is exactly a union's or thana's stays as typed,
+  // rather than becoming an upazila a letter away ("Rampur", not Raipura).
+  String key(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r'\b(union|thana|upazila|upazilla)\b'), '')
+      .replaceAll(RegExp('[^a-z0-9]+'), '');
+  final typedKey = key(q);
+  final upazilaExactly =
+      typedKey.isNotEmpty && upazilaEn.any((p) => key(p.$1) == typedKey);
+  final listedExactly =
+      names != null &&
+      typedKey.isNotEmpty &&
+      !upazilaExactly &&
+      (names.unions.any((u) => key(u.en) == typedKey) ||
+          names.thanas.any((th) => key(th.en) == typedKey));
+  final asBangla = listedExactly ? q : toBangla(q, upazilaEn);
+  final byName = findSeats(asBangla, seats, limit: limit, names: names);
+  // A union or thana typed in English is looked up by its English name too:
+  // toBangla knows only the upazilas, and may turn it into a near one.
+  final asTyped = names != null && asBangla != q && !upazilaExactly
+      ? findSeats(
+          q,
+          seats,
+          limit: limit,
+          names: names,
+        ).where((m) => m.kind == MatchKind.union || m.kind == MatchKind.thana)
+      : const <SeatMatch>[];
+  final nos = {for (final m in byName) m.seat.no};
+  final found = [
+    ...byName,
+    for (final m in asTyped)
+      if (nos.add(m.seat.no)) m,
+  ]..sort(_byScore);
+  return found
       .where((m) => m.kind != MatchKind.seat && m.kind != MatchKind.district)
+      .take(limit)
       .toList();
 }

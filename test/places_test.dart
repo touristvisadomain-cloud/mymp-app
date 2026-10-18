@@ -38,6 +38,10 @@ String _fixture(Uri url) {
   }
   if (path.contains('/seat/')) name = 'seat-${path.split('/').last}';
   if (path.contains('/district/')) name = 'district-${path.split('/').last}';
+  if (path == '/place-names.json') {
+    // The union and thana list is the same file in both languages.
+    return File('$_dir/place-names.json').readAsStringSync();
+  }
   if (path.startsWith('/geo/')) {
     // The map's boundaries are the same file in both languages.
     final f = File('$_dir/geo-${path.split('/').last}');
@@ -117,7 +121,289 @@ Future<void> _loadFonts() async {
   await loader.load();
 }
 
+// The website's place-list tests (src/lib/__tests__/findSeat.test.ts).
+PlaceUnion _u(
+  String bn,
+  String en,
+  String upazila,
+  String district, [
+  String? upazilaEn,
+  List<String>? inCity,
+]) => (
+  bn: bn,
+  en: en,
+  upazila: upazila,
+  district: district,
+  upazilaEn: upazilaEn,
+  inCity: inCity,
+);
+
+final _names = PlaceNames(
+  unions: [
+    _u('চরপাতা', 'Charpata', 'দৌলতখান', 'ভোলা'), // ভোলা-২ holds it whole
+    _u('কলাতিয়া', 'Kalatia', 'কেরানিগঞ্জ', 'ঢাকা'), // ঢাকা-২: all but five
+    _u('জিনজিরা', 'Zinzira', 'কেরানিগঞ্জ', 'ঢাকা'), // one of the five
+    _u('আশুলিয়া', 'Ashulia', 'সাভার', 'ঢাকা'), // not one of ঢাকা-২'s three
+    _u('চরপাতা', 'Charpata', 'নাচোল', 'চাঁপাইনবাবগঞ্জ'), // the same name
+  ],
+  thanas: [
+    (bn: 'উত্তরা', en: 'Uttara', slugs: ['s-187'], partial: true),
+  ],
+);
+
+List<String> _at(String q, [PlaceNames? names, List<FinderSeat>? seats]) => [
+  for (final m in findSeats(q, seats ?? _seats, names: names ?? _names))
+    '${m.seat.seat}:${m.kind.name}${m.partial ? '+part' : ''}',
+];
+
+List<String> _seatsOf(String q, List<FinderSeat> seats, PlaceNames names) => [
+  for (final m in findSeats(q, seats, names: names)) m.seat.seat,
+];
+
 void main() {
+  group('unions and thanas from the place list, as the website has them', () {
+    test('a union the boundary text does not name, through its upazila', () {
+      expect(_at('চরপাতা')..sort(), ['চাঁপাইনবাবগঞ্জ-২:union', 'ভোলা-২:union']);
+      expect(_at('চরপাতা ইউনিয়ন')..sort(), [
+        'চাঁপাইনবাবগঞ্জ-২:union',
+        'ভোলা-২:union',
+      ]);
+    });
+
+    test('"except" unions go to the other seat', () {
+      expect(_at('কলাতিয়া'), ['ঢাকা-২:union']);
+      expect(_at('জিনজিরা'), ['ঢাকা-৩:union']);
+      expect(_at('আশুলিয়া'), isEmpty);
+    });
+
+    test('a union typed in English, and the place it is shown with', () {
+      expect(_at('Kalatia'), ['ঢাকা-২:union']);
+      expect(_at('kalatia union'), ['ঢাকা-২:union']);
+      final m = findSeats('কলাতিয়া', _seats, names: _names).first;
+      expect(m.place, 'কলাতিয়া ইউনিয়ন, কেরানিগঞ্জ উপজেলা');
+    });
+
+    test('"<union> <upazila>" or "<union> <district>" picks one', () {
+      expect(_at('চরপাতা দৌলতখান'), ['ভোলা-২:union']);
+      expect(_at('চরপাতা চাঁপাইনবাবগঞ্জ'), ['চাঁপাইনবাবগঞ্জ-২:union']);
+      final names = PlaceNames(
+        unions: [
+          _u('চরপাতা', 'Charpata', 'দৌলতখান', 'ভোলা', 'Daulatkhan'),
+          _u('চরপাতা', 'Charpata', 'নাচোল', 'চাঁপাইনবাবগঞ্জ', 'Nachole'),
+        ],
+      );
+      expect(_seatsOf('charpata daulatkhan', _seats, names), ['ভোলা-২']);
+      expect(_seatsOf('Charpata Nachol', _seats, names), ['চাঁপাইনবাবগঞ্জ-২']);
+      expect(
+        findSeats(
+          'Charpata',
+          _seats,
+          names: names,
+        ).firstWhere((m) => m.seat.seat == 'ভোলা-২').placeEn,
+        'Charpata union, Daulatkhan',
+      );
+    });
+
+    test('an upazila ranks above the unions that share its name', () {
+      final names = PlaceNames(
+        unions: [_u('দৌলতখান', 'Daulatkhan', 'নাচোল', 'চাঁপাইনবাবগঞ্জ')],
+      );
+      expect(
+        [
+          for (final m in findSeats('দৌলতখান', _seats, names: names))
+            '${m.seat.seat}:${m.kind.name}',
+        ],
+        ['ভোলা-২:upazila', 'চাঁপাইনবাবগঞ্জ-২:union'],
+      );
+    });
+
+    test('a thana by name, in either script, with "থানা" or without', () {
+      expect(_at('উত্তরা'), ['ঢাকা-১৪:thana+part']);
+      expect(_at('উত্তরা থানা'), ['ঢাকা-১৪:thana+part']);
+      expect(_at('Uttara thana'), ['ঢাকা-১৪:thana+part']);
+    });
+
+    test('without the place list nothing changes', () {
+      expect(findSeats('চরপাতা', _seats), isEmpty);
+      expect(_where('দৌলতখান'), ['ভোলা-২:upazila']);
+    });
+
+    test('ঙ and ং are one letter: রাঙ্গুনিয়া finds রাংগুনিয়া', () {
+      final s = [_seat(284, 'চট্টগ্রাম-৭', 'চট্টগ্রাম', 'রাংগুনিয়া উপজেলা')];
+      expect(
+        [for (final m in findSeats('রাঙ্গুনিয়া', s)) m.seat.seat],
+        ['চট্টগ্রাম-৭'],
+      );
+    });
+
+    test('a hill-district union goes to the seat that is the district', () {
+      final s = [
+        _seat(299, 'রাংগামাটি', 'রাঙ্গামাটি', 'রাংগামাটি পার্বত্য জেলা'),
+        _seat(298, 'খাগড়াছড়ি', 'খাগড়াছড়ি', 'খাগড়াছড়ি পার্বত্য জেলা'),
+      ];
+      final names = PlaceNames(
+        unions: [_u('কাপ্তাই', 'Kaptai', 'কাপ্তাই', 'রাঙ্গামাটি')],
+      );
+      expect(_seatsOf('কাপ্তাই', s, names), ['রাংগামাটি']);
+    });
+
+    test('the text as written: এবং run on, ব্যাতীত, "X এবং Y উপজেলার"', () {
+      final s = [
+        _seat(
+          272,
+          'নোয়াখালী-৪',
+          'নোয়াখালী',
+          '(ক)সুবর্ণচরএবং(খ) নোয়াখালী সদর উপজেলা',
+        ),
+        _seat(
+          63,
+          'সিরাজগঞ্জ-১',
+          'সিরাজগঞ্জ',
+          '(ক)কাজিপুর এবং(খ) সিরাজগঞ্জ সদর উপজেলার নিম্নলিখিত ইউনিয়ন সমূহঃ (১)মেছড়া,(২) রতনকান্দি',
+        ),
+        _seat(
+          64,
+          'সিরাজগঞ্জ-২',
+          'সিরাজগঞ্জ',
+          '(ক) নিম্নলিখিত ইউনিয়ন ব্যাতীত সিরাজগঞ্জ সদরঃ- (১)মেছড়া,(২) রতনকান্দি এবং(খ) কামারখন্দ',
+        ),
+        _seat(
+          214,
+          'নরসিংদী-২',
+          'নরসিংদী',
+          'পলাশ এবং নরসিংদী সদর উপজেলার নিম্নলিখিত ইউনিয়ন সমূহঃ (১)আমদিয়া,(২) পাঁচদোনা',
+        ),
+      ];
+      final names = PlaceNames(
+        unions: [
+          _u('চরজাব্বার', 'Char Jabbar', 'সুবর্ণচর', 'নোয়াখালী'),
+          _u('শিয়ালকোল', 'Shialkol', 'সিরাজগঞ্জ সদর', 'সিরাজগঞ্জ'),
+          _u('মেছড়া', 'Mechhra', 'সিরাজগঞ্জ সদর', 'সিরাজগঞ্জ'),
+          _u('ঘোড়াশাল', 'Ghorashal', 'পলাশ', 'নরসিংদী'),
+        ],
+      );
+      expect(_seatsOf('সুবর্ণচর', s, names), ['নোয়াখালী-৪']);
+      expect(_seatsOf('চরজাব্বার', s, names), ['নোয়াখালী-৪']);
+      expect(_seatsOf('শিয়ালকোল', s, names), ['সিরাজগঞ্জ-২']);
+      expect(_seatsOf('মেছড়া', s, names), ['সিরাজগঞ্জ-১']);
+      expect(_seatsOf('ঘোড়াশাল', s, names), ['নরসিংদী-২']);
+      // পলাশ is whole in নরসিংদী-২, not a part of it.
+      expect(
+        [
+          for (final m in findSeats('পলাশ', s))
+            '${m.seat.seat}:${m.kind.name}${m.partial ? '+part' : ''}',
+        ],
+        ['নরসিংদী-২:upazila'],
+      );
+    });
+
+    test('a list past its punctuation, an upazila a letter apart', () {
+      final s = [
+        _seat(
+          192,
+          'গাজীপুর-৩',
+          'গাজীপুর',
+          '(ক)শ্রীপুর এবং (খ)গাজিপুর সদর উপজেলারঃ মির্জাপুর, ভাওয়াল গড় ও পিরুজালী ইউনিয়ন',
+        ),
+        _seat(
+          82,
+          'ঝিনাইদহ-৪',
+          'ঝিনাইদহ',
+          '(ক)কালীগঞ্জ এবং(খ) ঝিনাইদহ সদর উপজেলার (১)নলডাঙ্গা,(২) ঘোড়াশাল,(৩) ফুরসুন্দি ও(৪) মহারাজপুর ইউনিয়ন',
+        ),
+        _seat(
+          2,
+          'ঠাকুরগাঁও-২',
+          'ঠাকুরগাঁও',
+          '(ক)বালিয়াডাঙ্গী, (খ) হরিপুর এবং (গ) রানিসংকাইল উপজেলার নিম্নলিখিত ইউনিয়ন সমূহ: (১)ধর্মগড় ও (২)কাশিপুর',
+        ),
+        _seat(
+          3,
+          'ঠাকুরগাঁও-৩',
+          'ঠাকুরগাঁও',
+          '(ক)পীরগঞ্জ উপজেলা এবং (খ) নিম্নলিখিত ইউনিয়ন সমূহ ব্যতীত রানিশংকাইল উপজেলা: (১)ধর্মগড় ও(২) কাশিপুর',
+        ),
+      ];
+      final names = PlaceNames(
+        unions: [
+          _u('মির্জাপুর', 'Mirzapur', 'গাজীপুর সদর', 'গাজীপুর'),
+          _u('মহারাজপুর', 'Maharajpur', 'ঝিনাইদহ সদর', 'ঝিনাইদহ'),
+          _u('ফুরসন্দি', 'Fursandi', 'ঝিনাইদহ সদর', 'ঝিনাইদহ'),
+          _u('ধর্মগড়', 'Dharmagarh', 'রানিশংকাইল', 'ঠাকুরগাঁও'),
+          _u('নেকমরদ', 'Nekmorod', 'রানিশংকাইল', 'ঠাকুরগাঁও'),
+        ],
+      );
+      expect(_seatsOf('মির্জাপুর', s, names), ['গাজীপুর-৩']);
+      expect(_seatsOf('মহারাজপুর', s, names), ['ঝিনাইদহ-৪']);
+      expect(_seatsOf('ফুরসন্দি', s, names), ['ঝিনাইদহ-৪']);
+      expect(_seatsOf('ধর্মগড়', s, names), ['ঠাকুরগাঁও-২']);
+      expect(_seatsOf('নেকমরদ', s, names), ['ঠাকুরগাঁও-৩']);
+    });
+
+    test('a union now in a city corporation shows each seat, as part', () {
+      final s = [
+        _seat(
+          190,
+          'গাজীপুর-১',
+          'গাজীপুর',
+          '(ক)কালিয়াকৈর এবং(খ) গাজীপুর সিটি কর্পোরেশনের ১ হতে ১৮ নং ওয়ার্ড',
+        ),
+        _seat(
+          191,
+          'গাজীপুর-২',
+          'গাজীপুর',
+          'গাজীপুর সিটি কর্পোরেশনের ১৯ হতে ৩৯ নং ওয়ার্ড',
+        ),
+      ];
+      final names = PlaceNames(
+        unions: [
+          _u('গাছা', 'Gachha', 'গাজীপুর সদর', 'গাজীপুর', 'Gazipur Sadar', [
+            's-190',
+            's-191',
+          ]),
+        ],
+      );
+      expect(_at('গাছা', names, s), [
+        'গাজীপুর-১:union+part',
+        'গাজীপুর-২:union+part',
+      ]);
+    });
+
+    test('the site\'s list file is read, rows it does not know skipped', () {
+      final names = PlaceNames.fromJson({
+        'unions': [
+          ['চরপাতা', 'Charpata', 'দৌলতখান', 'ভোলা', 'Daulatkhan'],
+          [
+            'গাছা',
+            'Gachha',
+            'গাজীপুর সদর',
+            'গাজীপুর',
+            'Gazipur Sadar',
+            ['gazipur-1'],
+          ],
+          ['broken'],
+          7,
+        ],
+        'thanas': [
+          [
+            'মিরপুর',
+            'Mirpur',
+            ['dhaka-14', 'dhaka-15'],
+            true,
+          ],
+          ['bad', 'Bad', 'not a list', true],
+        ],
+        'source': 'ignored',
+      });
+      expect(names.unions.length, 2);
+      expect(names.unions[0].upazilaEn, 'Daulatkhan');
+      expect(names.unions[0].inCity, isNull);
+      expect(names.unions[1].inCity, ['gazipur-1']);
+      expect(names.thanas.single.slugs, ['dhaka-14', 'dhaka-15']);
+      expect(names.thanas.single.partial, isTrue);
+    });
+  });
+
   group('the place finder, as the website has it', () {
     test('an upazila finds the seat that holds it whole', () {
       expect(_where('দৌলতখান'), ['ভোলা-২:upazila']);
@@ -237,6 +523,37 @@ void main() {
       expect(hits, isNotEmpty);
       expect(hits.every((h) => h.endsWith(':ward')), isTrue);
       expect(place(bn, 'ঢাকা দক্ষিণ ওয়ার্ড ১৫'), hits);
+    });
+
+    test('every union and the city thanas, from the site\'s list', () {
+      final names = PlaceNames.fromJson(_json('place-names'));
+      expect(names.unions.length, greaterThan(4500));
+      expect(names.thanas.length, greaterThan(80));
+      List<String> listed(Places p, String q) => [
+        for (final m in findPlaces(q, p.finderSeats, p.upazilaEn, names: names))
+          '${m.seat.slug}:${m.kind.name}${m.partial ? '+part' : ''}',
+      ];
+      expect(listed(bn, 'চরপাতা দৌলতখান'), ['bhola-2:union']);
+      expect(listed(en, 'Charpata Doulatkhan'), ['bhola-2:union']);
+      // A union a seat's text never names, found through its upazila.
+      expect(listed(bn, 'রামপুর ত্রিশাল'), ['mymensingh-7:union']);
+      expect(listed(en, 'Rampur Trishal'), ['mymensingh-7:union']);
+      // "Rampur" is the unions so called, not the upazila Raipura.
+      expect(listed(en, 'Rampur'), isNotEmpty);
+      expect(listed(en, 'Rampur').every((h) => h.contains(':union')), isTrue);
+      // Mirpur: the upazila first, then Dhaka's thana before the unions.
+      final mirpur = listed(bn, 'মিরপুর');
+      expect(mirpur.first, 'kushtia-2:upazila');
+      expect(mirpur[1], 'dhaka-14:thana+part');
+      expect(listed(en, 'Gulshan thana'), ['dhaka-17:thana+part']);
+      expect(listed(bn, 'ধানমন্ডি থানা'), ['dhaka-10:thana+part']);
+      // A union since taken into Gazipur's city corporation.
+      expect(
+        listed(bn, 'গাছা').every((h) => h.endsWith(':union+part')),
+        isTrue,
+      );
+      // A village is not in the list.
+      expect(listed(bn, 'গ্রামেরনামকিছু'), isEmpty);
     });
 
     test('a name is not a place, and seats by name are left to the list', () {
@@ -359,7 +676,16 @@ void main() {
               // fetch the list again.
               appLang.value = lang;
               Places.reset();
+              PlaceNamesStore.reset();
               await tester.runAsync(Api.instance.loadBootstrap);
+              // The union and thana list, served by the mock client.
+              await tester.runAsync(() async {
+                PlaceNamesStore.ensure();
+                for (var i = 0; i < 50; i++) {
+                  if (PlaceNamesStore.names.value != null) break;
+                  await Future<void>.delayed(const Duration(milliseconds: 20));
+                }
+              });
               await tester.pumpWidget(
                 MaterialApp(
                   theme: buildTheme(),
@@ -496,6 +822,53 @@ void main() {
                   await t.enterText(
                     find.byType(TextField).first,
                     lang == Lang.en ? 'Savar' : 'সাভার',
+                  );
+                  for (var i = 0; i < 5; i++) {
+                    await t.pump(const Duration(milliseconds: 200));
+                  }
+                },
+              ),
+              isEmpty,
+            );
+          });
+
+          testWidgets('members: a union many share, and how to pick one', (
+            t,
+          ) async {
+            expect(
+              await run(
+                t,
+                const MembersScreen(),
+                flings: 3,
+                shows: tr(
+                  'এই নামে কয়েকটি ইউনিয়ন আছে',
+                  'Several unions have this name',
+                ),
+                actions: (t) async {
+                  await t.enterText(
+                    find.byType(TextField).first,
+                    lang == Lang.en ? 'Rampur' : 'রামপুর',
+                  );
+                  for (var i = 0; i < 5; i++) {
+                    await t.pump(const Duration(milliseconds: 200));
+                  }
+                },
+              ),
+              isEmpty,
+            );
+          });
+
+          testWidgets('members: a city thana', (t) async {
+            expect(
+              await run(
+                t,
+                const MembersScreen(),
+                flings: 3,
+                shows: tr('গুলশান থানা', 'Gulshan thana'),
+                actions: (t) async {
+                  await t.enterText(
+                    find.byType(TextField).first,
+                    lang == Lang.en ? 'Gulshan' : 'গুলশান',
                   );
                   for (var i = 0; i < 5; i++) {
                     await t.pump(const Duration(milliseconds: 200));
