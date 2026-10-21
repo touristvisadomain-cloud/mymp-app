@@ -117,6 +117,20 @@ void main() {
       expect(mine.first.city, 'ঢাকা উত্তর সিটি কর্পোরেশন');
     });
 
+    test('a written profile: sub-headings, duties and the seat story', () {
+      final p = _profile('md-nurul-haque');
+      expect(p.bioMarked, contains('### রাজনৈতিক জীবন'));
+      // Its "বর্তমান দায়িত্ব" opens the duties instead of repeating them.
+      expect(p.bioMarked, isNot(contains('### বর্তমান দায়িত্ব')));
+      expect(p.duties.first, contains('প্রতিমন্ত্রী'));
+      expect(p.dutiesSources, isNotEmpty);
+      expect(p.seatStory, isNotEmpty);
+      expect(p.seatStorySources.first.label, isNotNull);
+      final e = _profile('md-nurul-haque', en: true);
+      expect(e.duties, isEmpty);
+      expect(e.seatStory, isEmpty);
+    });
+
     test('names in capitals are written as names', () {
       expect(titleCaseName('TARIQUE RAHMAN'), 'Tarique Rahman');
       expect(titleCaseName('Md. Abdus Salam'), 'Md. Abdus Salam');
@@ -428,6 +442,28 @@ void main() {
           ),
           isEmpty,
         );
+      });
+
+      testWidgets('a written profile with duties and the seat story', (
+        t,
+      ) async {
+        expect(
+          await show(
+            t,
+            MemberScreen(member: brief('md-nurul-haque')),
+            drags: 60,
+            expects: en
+                ? ['Profile', 'Constituency']
+                : [
+                    'রাজনৈতিক জীবন',
+                    'বর্তমান দায়িত্ব ও কার্যক্রম',
+                    'নির্বাচনী এলাকার পরিচিতি',
+                    'ভুল দেখলে জানান।',
+                  ],
+          ),
+          isEmpty,
+        );
+        if (!en) expect(find.textContaining('###'), findsNothing);
       });
     });
   }

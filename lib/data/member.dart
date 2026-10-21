@@ -245,6 +245,20 @@ class MemberProfile {
   final String? leadBn;
   final List<String> introBn;
 
+  /// The biography as the page shows it, sub-headings written "### …" (from
+  /// `bioBlocks`); null from an older site, which sends only [bioBn].
+  final String? bioMarked;
+
+  /// "বর্তমান দায়িত্ব ও কার্যক্রম": the post and since when, then the work
+  /// since, one paragraph each. Bangla only.
+  final List<String> duties;
+  final List<ProfileSource> dutiesSources;
+
+  /// "নির্বাচনী এলাকার পরিচিতি": the constituency, one paragraph each.
+  /// Bangla only.
+  final List<String> seatStory;
+  final List<ProfileSource> seatStorySources;
+
   /// The Wikipedia article(s) the starred facts came from.
   final List<String> bioSource;
   final List<ProfileSource> bioSources;
@@ -302,6 +316,11 @@ class MemberProfile {
     this.showSummary = false,
     this.leadBn,
     this.introBn = const [],
+    this.bioMarked,
+    this.duties = const [],
+    this.dutiesSources = const [],
+    this.seatStory = const [],
+    this.seatStorySources = const [],
     this.bioSource = const [],
     this.bioSources = const [],
     this.bioFromWiki = const {},
@@ -334,6 +353,12 @@ class MemberProfile {
     final links = _maps(j['bioSourceLinks']);
     List<String> urls(dynamic v) =>
         (_s(v) ?? '').split(RegExp(r'\s+')).where((u) => u.isNotEmpty).toList();
+    List<ProfileSource> named(dynamic v) => [
+      for (final l in _maps(v))
+        if (_s(l['url']) != null) ProfileSource(l['url'] as String, _s(l['label'])),
+    ];
+    final blocks = _maps(j['bioBlocks']);
+    final story = j['seatStory'] is Map ? j['seatStory'] as Map : const {};
     return MemberProfile(
       brief: MemberBrief.fromJson(j),
       nameAlt: _s(j['nameAlt']),
@@ -355,6 +380,17 @@ class MemberProfile {
       showSummary: _b(j['showSummary']),
       leadBn: _s(j['leadBn']),
       introBn: _strings(j['introBn']),
+      bioMarked: blocks.isEmpty
+          ? null
+          : [
+              for (final b in blocks)
+                if (_s(b['text']) != null)
+                  _b(b['heading']) ? '### ${b['text']}' : b['text'] as String,
+            ].join('\n\n'),
+      duties: _strings(j['duties']),
+      dutiesSources: named(j['dutiesSourceLinks']),
+      seatStory: _strings(story['paragraphs']),
+      seatStorySources: named(story['sourceLinks']),
       bioSource: urls(j['bioSource']),
       bioSources: links.isNotEmpty
           ? [

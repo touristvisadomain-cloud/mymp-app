@@ -502,6 +502,21 @@ class _ProfileBody extends StatelessWidget {
         _header(context),
         const SizedBox(height: 24),
         ..._profile(context),
+        if (d.duties.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          _Heading(t('বর্তমান দায়িত্ব ও কার্যক্রম', 'Current role and work')),
+          BioCard(
+            text: d.duties.join('\n\n'),
+            showTitle: false,
+            translated: false,
+            sources: [for (final s in d.dutiesSources) s.url],
+            sourceNames: {
+              for (final s in d.dutiesSources)
+                if (s.label != null) s.url: s.label!,
+            },
+            askForCorrections: true,
+          ),
+        ],
         if (general && seat.districtSlug != null) ...[
           const SizedBox(height: 28),
           _Heading(t('নির্বাচনী এলাকা', 'Constituency')),
@@ -513,6 +528,20 @@ class _ProfileBody extends StatelessWidget {
             districtName: seat.districtBn,
             note: seat.boundaryBn,
           ),
+          if (d.seatStory.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            BioCard(
+              text: d.seatStory.join('\n\n'),
+              title: t('নির্বাচনী এলাকার পরিচিতি', 'About the constituency'),
+              translated: false,
+              sources: [for (final s in d.seatStorySources) s.url],
+              sourceNames: {
+                for (final s in d.seatStorySources)
+                  if (s.label != null) s.url: s.label!,
+              },
+              askForCorrections: true,
+            ),
+          ],
         ],
         const SizedBox(height: 28),
         ..._terms(context),
@@ -946,7 +975,9 @@ class _ProfileBody extends StatelessWidget {
         ? '${introParts.sublist(0, introParts.length - 1).join(', ')}${t(' এবং ', ' and ')}${introParts.last}'
         : introParts.first;
 
-    final bioParagraphs = (d.bioBn ?? '')
+    // With its sub-headings where the site sends them; its "বর্তমান দায়িত্ব" then opens the duties card.
+    final bioText = d.bioMarked ?? d.bioBn;
+    final bioParagraphs = (bioText ?? '')
         .split(RegExp(r'\n{2,}'))
         .where((p) => p.trim().isNotEmpty)
         .toList();
@@ -978,7 +1009,7 @@ class _ProfileBody extends StatelessWidget {
       if (bioParagraphs.isNotEmpty) ...[
         const SizedBox(height: 14),
         BioCard(
-          text: d.bioBn!,
+          text: bioText!,
           showTitle: false,
           translated: d.bioTranslated,
           originalUrl: _bnPage,

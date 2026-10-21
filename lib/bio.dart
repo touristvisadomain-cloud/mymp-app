@@ -92,13 +92,16 @@ class BioCard extends StatelessWidget {
             const SizedBox(height: 10),
           ],
           for (var i = 0; i < paragraphs.length; i++) ...[
-            if (i > 0) const SizedBox(height: 12),
-            Text(
-              paragraphs[i],
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(height: 1.75),
-            ),
+            if (i > 0) SizedBox(height: _isHeading(paragraphs[i]) ? 18 : 12),
+            if (_isHeading(paragraphs[i]))
+              _SubHeading(paragraphs[i].replaceFirst(RegExp(r'^###\s+'), ''))
+            else
+              Text(
+                paragraphs[i],
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(height: 1.75),
+              ),
           ],
           if (t.en && (translated ?? true)) ...[
             const SizedBox(height: 10),
@@ -144,6 +147,41 @@ class BioCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// A one-line paragraph starting "### " is a sub-heading ("### রাজনৈতিক জীবন"), as on the website.
+bool _isHeading(String p) => RegExp(r'^###\s+\S').hasMatch(p) && !p.contains('\n');
+
+/// A sub-heading inside a biography: a short bar in the brand colour, then the title.
+class _SubHeading extends StatelessWidget {
+  final String text;
+  const _SubHeading(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 5,
+          height: 17,
+          decoration: BoxDecoration(
+            color: AppColors.brand,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
