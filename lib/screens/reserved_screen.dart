@@ -239,20 +239,17 @@ class _PartyRow extends StatelessWidget {
               padding: const EdgeInsets.only(left: 30),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(99),
-                child: SizedBox(
+                child: Container(
                   height: 6,
-                  child: Stack(
-                    children: [
-                      const Positioned.fill(
-                        child: ColoredBox(color: AppColors.sunk),
-                      ),
-                      FractionallySizedBox(
-                        widthFactor: total <= 0
-                            ? 0
-                            : (party.held / total).clamp(0.0, 1.0),
-                        child: ColoredBox(color: partyColour(party.abbr)),
-                      ),
-                    ],
+                  width: double.infinity,
+                  color: AppColors.sunk,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: FractionallySizedBox(
+                    widthFactor: total <= 0
+                        ? 0
+                        : (party.held / total).clamp(0.0, 1.0),
+                    heightFactor: 1,
+                    child: ColoredBox(color: partyColour(party.abbr)),
                   ),
                 ),
               ),

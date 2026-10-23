@@ -723,18 +723,17 @@ class ResultCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(99),
-                    child: SizedBox(
+                    // The track the full width, the share in the party's
+                    // colour from the start, as the election screen's bars.
+                    child: Container(
                       height: 6,
-                      child: Stack(
-                        children: [
-                          const Positioned.fill(
-                            child: ColoredBox(color: AppColors.sunk),
-                          ),
-                          FractionallySizedBox(
-                            widthFactor: (c.votes / top).clamp(0.0, 1.0),
-                            child: ColoredBox(color: partyColour(c.party)),
-                          ),
-                        ],
+                      width: double.infinity,
+                      color: AppColors.sunk,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: FractionallySizedBox(
+                        widthFactor: (c.votes / top).clamp(0.0, 1.0),
+                        heightFactor: 1,
+                        child: ColoredBox(color: partyColour(c.party)),
                       ),
                     ),
                   ),
