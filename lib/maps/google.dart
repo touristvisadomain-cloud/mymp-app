@@ -13,8 +13,10 @@
 ///
 /// `--dart-define=MAPS=0` turns Google Maps off in a build that has a key.
 ///
-/// No location: the maps never ask where the phone is (no permission, no
-/// "my location" layer), and nothing else is collected by the app.
+/// Google's own "my location" layer stays off. Where the phone is, is asked
+/// only by the maps' "আমি কি এই আসনে?" button (lib/locate.dart), checked on
+/// the phone and given to no one, Google included; nothing else is
+/// collected by the app.
 library;
 
 import 'dart:math' as math;

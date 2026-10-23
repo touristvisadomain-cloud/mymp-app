@@ -18,7 +18,9 @@ import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platf
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mymp/disclaimer.dart';
+import 'package:mymp/data/member.dart';
 import 'package:mymp/i18n.dart';
+import 'package:mymp/locate.dart';
 import 'package:mymp/maps/election_map.dart' show tieHalves;
 import 'package:mymp/maps/google.dart';
 import 'package:mymp/maps/seat_map.dart';
@@ -126,6 +128,7 @@ void main() {
   });
 
   tearDown(() {
+    debugLocate = null;
     GoogleMaps.debugEnabled = false;
     _answer(null);
     debugDefaultTargetPlatformOverride = null;
@@ -291,6 +294,61 @@ void main() {
 
       await t.pumpWidget(const SizedBox());
     });
+
+    Future<void> tapLocate(WidgetTester t) async {
+      await http.runWithClient(() async {
+        await t.ensureVisible(find.text('আমার আসন কোনটি?'));
+        await t.tap(find.text('আমার আসন কোনটি?'));
+        await t.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 500)),
+        );
+        await _pumpFor(t, const Duration(seconds: 1));
+        await t.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 300)),
+        );
+        await _pumpFor(t, const Duration(seconds: 1));
+      }, () => _client);
+    }
+
+    testWidgets('আমার আসন কোনটি?: a ward wholly in a seat opens it', (t) async {
+      // Ward 15 of Dhaka North, wholly in Dhaka-17.
+      debugLocate = () async =>
+          const LocateResult.found(Located(23.82616, 90.39231));
+      await pump(t);
+      await tapLocate(t);
+      expect(find.textContaining('ওয়ার্ড ১৫'), findsWidgets);
+      expect(find.textContaining('ঢাকা-১৭ আসনে'), findsOneWidget);
+      // The seat's card, as a tap on its marker opens it.
+      expect(find.text('প্রোফাইল'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('আমার আসন কোনটি?: a split upazila offers its seats', (t) async {
+      // Keraniganj, split between Dhaka-2 and Dhaka-3.
+      debugLocate = () async =>
+          const LocateResult.found(Located(23.71265, 90.3331));
+      await pump(t);
+      await tapLocate(t);
+      expect(find.textContaining('একাধিক আসনে ভাগ করা'), findsOneWidget);
+      expect(find.widgetWithText(ActionChip, 'ঢাকা-২'), findsOneWidget);
+      expect(find.widgetWithText(ActionChip, 'ঢাকা-৩'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('আমার আসন কোনটি?: outside Bangladesh, or refused', (t) async {
+      debugLocate = () async =>
+          const LocateResult.found(Located(51.5, -0.12)); // London
+      await pump(t);
+      await tapLocate(t);
+      expect(find.textContaining('বাংলাদেশের বাইরে'), findsOneWidget);
+
+      debugLocate = () async =>
+          const LocateResult.failed('অনুমতি বন্ধ', needsSettings: true);
+      await tapLocate(t);
+      expect(find.text('অনুমতি বন্ধ'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'সেটিংস'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
   });
 
   group('the district and seat maps', () {
@@ -369,6 +427,99 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
   });
+  group('আমি কি এই আসনে?', () {
+    Future<void> pump(WidgetTester t, Widget w) async {
+      SharedPreferences.setMockInitialValues({});
+      await http.runWithClient(() async {
+        await t.pumpWidget(
+          MaterialApp(
+            theme: buildTheme(),
+            home: Scaffold(body: SingleChildScrollView(child: w)),
+          ),
+        );
+        await t.runAsync(
+          () => Future<void>.delayed(const Duration(seconds: 1)),
+        );
+        await _pumpFor(t, const Duration(seconds: 1));
+      }, () => _client);
+    }
+
+    const seat = SeatMap(
+      districtSlug: 'dhaka',
+      seatSlug: 'dhaka-17',
+      color: Color(0xFF1F7A4F),
+      districtName: 'ঢাকা',
+    );
+
+    Future<void> ask(WidgetTester t, Located at) async {
+      debugLocate = () async => LocateResult.found(at);
+      await t.tap(find.text('আমি কি এই আসনে?'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 100));
+    }
+
+    test('a point is found in its place, a ward before its city', () {
+      final places = [
+        for (final f
+            in (jsonDecode(_file('test/fixtures/places/geo-dhaka.json'))
+                    as Map)['features']
+                as List)
+          ?GeoPlace.fromJson(Map<String, dynamic>.from(f as Map)),
+      ];
+      final ward = placeAt(places, 90.39231, 23.82616)!;
+      expect(ward.kind, 'ward');
+      expect(ward.seats.keys, ['dhaka-17']);
+      expect(placeAt(places, 90.11636, 23.60497)!.name, 'দোহার');
+      expect(placeAt(places, 91.8, 22.35), isNull); // Chattogram
+    });
+
+    testWidgets('drawn: yes, no, and outside the district', (t) async {
+      await pump(t, seat);
+      expect(find.text('আমি কি এই আসনে?'), findsOneWidget);
+
+      await ask(t, const Located(23.82616, 90.39231)); // ward 15
+      expect(find.textContaining('হ্যাঁ।'), findsOneWidget);
+      expect(find.textContaining('ওয়ার্ড ১৫'), findsWidgets);
+
+      await ask(t, const Located(23.60497, 90.11636)); // Dohar
+      expect(
+        find.textContaining('না। আপনার অবস্থান দোহার উপজেলা'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('ঢাকা-১ আসনে'), findsOneWidget);
+
+      await ask(t, const Located(22.35, 91.8)); // Chattogram
+      expect(find.textContaining('এই জেলার বাইরে'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('refused for good: the settings are offered', (t) async {
+      await pump(t, seat);
+      debugLocate = () async =>
+          const LocateResult.failed('অনুমতি বন্ধ', needsSettings: true);
+      await t.tap(find.text('আমি কি এই আসনে?'));
+      await t.pump();
+      expect(find.text('অনুমতি বন্ধ'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'সেটিংস'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('with a key: a marker on Google, not its location layer', (
+      t,
+    ) async {
+      GoogleMapsFlutterPlatform.instance = _FakeMaps();
+      GoogleMaps.debugEnabled = true;
+      await pump(t, seat);
+      GoogleMap map() => t.widget<GoogleMap>(find.byType(GoogleMap));
+      expect(map().markers, isEmpty);
+      await ask(t, const Located(23.82616, 90.39231));
+      expect(map().markers.single.markerId.value, 'here');
+      expect(map().myLocationEnabled, isFalse);
+      expect(find.textContaining('হ্যাঁ।'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+  });
+
   group('what the app says about the maps', () {
     for (final lang in Lang.values) {
       testWidgets('${lang.name}: Google named only when the maps are Google', (

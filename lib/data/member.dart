@@ -355,7 +355,8 @@ class MemberProfile {
         (_s(v) ?? '').split(RegExp(r'\s+')).where((u) => u.isNotEmpty).toList();
     List<ProfileSource> named(dynamic v) => [
       for (final l in _maps(v))
-        if (_s(l['url']) != null) ProfileSource(l['url'] as String, _s(l['label'])),
+        if (_s(l['url']) != null)
+          ProfileSource(l['url'] as String, _s(l['label'])),
     ];
     final blocks = _maps(j['bioBlocks']);
     final story = j['seatStory'] is Map ? j['seatStory'] as Map : const {};
@@ -515,6 +516,36 @@ class GeoPlace {
       polygons: polygons,
     );
   }
+}
+
+/// Whether the point (lon, lat) lies inside [f]: inside an odd number of
+/// its rings, so a hole (a city inside its upazila) is left out.
+bool placeHolds(GeoPlace f, double lon, double lat) {
+  var inside = false;
+  for (final poly in f.polygons) {
+    for (final ring in poly) {
+      for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        final (xi, yi) = ring[i];
+        final (xj, yj) = ring[j];
+        if ((yi > lat) != (yj > lat) &&
+            lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
+          inside = !inside;
+        }
+      }
+    }
+  }
+  return inside;
+}
+
+/// The place of [places] the point (lon, lat) lies in: a city ward before
+/// the city around it, as the website's map decides; null when none holds it.
+GeoPlace? placeAt(List<GeoPlace> places, double lon, double lat) {
+  GeoPlace? best;
+  for (final f in places) {
+    if (!placeHolds(f, lon, lat)) continue;
+    if (best == null || (f.kind == 'ward' && best.kind != 'ward')) best = f;
+  }
+  return best;
 }
 
 final _geo = <String, List<GeoPlace>>{};

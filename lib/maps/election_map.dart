@@ -30,13 +30,17 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../api.dart';
 import '../data/election.dart';
+import '../data/member.dart'
+    show GeoPlace, SeatPart, fetchDistrictGeo, placeAt, upazilaNamesEn;
 import '../i18n.dart';
+import '../locate.dart';
 import '../models.dart';
 import '../party_logo.dart';
 import '../search.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'google.dart';
+import 'seat_map.dart' show PlaceNamer;
 
 part 'election_map_google.dart';
 
@@ -181,6 +185,13 @@ class _ElectionMapState extends State<ElectionMap>
 
   final _query = TextEditingController();
   final _focus = FocusNode();
+
+  // "আমার আসন কোনটি?": what was found, and the seats to choose from when
+  // the phone's place is split between seats.
+  String? _where;
+  List<ElectionSeat> _whereSeats = const [];
+  bool _locating = false;
+  bool _needsSettings = false;
 
   // The finder, built once for the seats it was given: a seat by its
   // member's, its own or its district's name in either script, spelt any
@@ -371,6 +382,121 @@ class _ElectionMapState extends State<ElectionMap>
           .map(sheet.toLocal);
       _zoomTo(_bounds(frame));
     }, onError: (_) => toPoint());
+  }
+
+  /// "আমার আসন কোনটি?": the phone's district from the country's outlines,
+  /// then its place from the district's file, then that place's seat; all
+  /// on the phone (lib/locate.dart).
+  Future<void> _locate() async {
+    _focus.unfocus();
+    setState(() {
+      _locating = true;
+      _needsSettings = false;
+      _whereSeats = const [];
+      _where = t('অবস্থান খোঁজা হচ্ছে…', 'Finding your location…');
+    });
+    void say(String m, {List<ElectionSeat> seats = const []}) {
+      if (!mounted) return;
+      setState(() {
+        _locating = false;
+        _where = m;
+        _whereSeats = seats;
+      });
+    }
+
+    final r = await locateMe();
+    if (!mounted) return;
+    final at = r.at;
+    if (at == null) {
+      _needsSettings = r.needsSettings;
+      return say(r.message!);
+    }
+    GeoOverview? geo = _geo;
+    try {
+      geo ??= await fetchOverview();
+    } catch (_) {}
+    if (geo == null) {
+      return say(
+        t(
+          'মানচিত্রটি আনা গেল না; নেটওয়ার্ক পেলে আবার চেষ্টা করুন।',
+          'The map could not be fetched; try again with a network.',
+        ),
+      );
+    }
+    final district = geo.districts
+        .where((d) => d.rings.any((r) => _ringHolds(r, at.lon, at.lat)))
+        .firstOrNull;
+    if (district == null) {
+      return say(
+        t(
+          'আপনার অবস্থান বাংলাদেশের বাইরে দেখাচ্ছে। এমপি, আসন বা জেলার নাম লিখে খুঁজুন।',
+          'Your location shows as outside Bangladesh. Search by the name of an MP, seat or district.',
+        ),
+      );
+    }
+    final dName = widget.districtNames[district.slug] ?? district.name;
+    var places = const <GeoPlace>[];
+    try {
+      places = await fetchDistrictGeo(district.slug);
+    } catch (_) {}
+    final inside = placeAt(places, at.lon, at.lat);
+    if (!mounted) return;
+    if (inside == null) {
+      // The district's file missing, or a gap between its places.
+      setState(() => _mode = _Mode.seats);
+      _pickDistrict(district.slug);
+      return say(
+        t(
+          'আপনি $dName জেলায় আছেন। জেলার আসনগুলো নিচে দেওয়া হলো।',
+          'You are in $dName district. Its seats are below.',
+        ),
+      );
+    }
+    final namer = t.en
+        ? PlaceNamer.en(await upazilaNamesEn(), dName)
+        : const PlaceNamer.bn();
+    if (!mounted) return;
+    final name = namer.placeName(inside);
+    final seats = [
+      for (final slug in inside.seats.keys)
+        ?widget.seats.where((s) => s.slug == slug).firstOrNull,
+    ];
+    final wholly =
+        seats.length == 1 && inside.seats[seats.single.slug] == SeatPart.whole;
+    if (wholly) {
+      final seat = seats.single;
+      _open(seat);
+      return say(
+        name == null
+            ? 'You are in ${seat.name}.'
+            : t(
+                'আপনার অবস্থান $name, যা ${seat.name} আসনে।',
+                'You are in $name, which is in ${seat.name}.',
+              ),
+      );
+    }
+    final list = seats.map((s) => s.name).join(', ');
+    say(
+      name == null
+          ? 'Where you are is split between seats: $list. Check your union or ward on the seat’s page.'
+          : t(
+              'আপনার অবস্থান $name, যা একাধিক আসনে ভাগ করা: $list। আপনার ইউনিয়ন বা ওয়ার্ড কোন আসনে, আসনের পাতায় মিলিয়ে দেখুন।',
+              'You are in $name, which is split between seats: $list. Check which one your union or ward is in on the seat’s page.',
+            ),
+      seats: seats,
+    );
+  }
+
+  static bool _ringHolds(List<Offset> ring, double lon, double lat) {
+    var inside = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      final a = ring[i], b = ring[j];
+      if ((a.dy > lat) != (b.dy > lat) &&
+          lon < (b.dx - a.dx) * (lat - a.dy) / (b.dy - a.dy) + a.dx) {
+        inside = !inside;
+      }
+    }
+    return inside;
   }
 
   /// A district from the search: the seats view, the district picked.
@@ -582,6 +708,91 @@ class _ElectionMapState extends State<ElectionMap>
             }
           },
         ),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            onPressed: _locating ? null : _locate,
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.brand,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            ),
+            icon: _locating
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.brand,
+                    ),
+                  )
+                : const Icon(Icons.my_location_rounded, size: 18),
+            label: Text(
+              t('আমার আসন কোনটি?', 'Which is my seat?'),
+              style: const TextStyle(
+                fontFamily: _font,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        if (_where case final w?)
+          Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: AppDecor.card(radius: 12),
+            child: Semantics(
+              liveRegion: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          w,
+                          style: const TextStyle(
+                            fontFamily: _font,
+                            fontSize: 13.5,
+                            height: 1.5,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                      ),
+                      if (_needsSettings)
+                        TextButton(
+                          onPressed: openLocationSettings,
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.brand,
+                          ),
+                          child: Text(t('সেটিংস', 'Settings')),
+                        ),
+                    ],
+                  ),
+                  if (_whereSeats.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final s in _whereSeats)
+                          ActionChip(
+                            label: Text(
+                              s.name,
+                              style: const TextStyle(
+                                fontFamily: _font,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onPressed: () => _open(s),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
         if (nothing)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),

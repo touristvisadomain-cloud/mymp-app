@@ -95,7 +95,14 @@ supplied graphics do).
 The app itself still collects nothing:
 
 - there is no account, no analytics, no crash reporter and no advertising id;
-- the only Android permission is `INTERNET` (no location permission);
+- the Android permissions are `INTERNET` and, since 1.3.8 (owner,
+  2026-10-23), the foreground location permissions, used only when the reader
+  taps "আমি কি এই আসনে?" / "আমার আসন কোনটি?" on a map. The position is
+  checked against the seats' boundaries on the phone and never leaves it, so
+  under Play's definition it is not collected (data processed only on the
+  device). Answer "Location: not collected", and keep the Maps SDK's own
+  declared types as they are; Google's "my location" layer is off, so the SDK
+  is not given the position;
 - the phone keeps a copy of the public member list, which is app content, not
   user data, and one on/off flag that the first-launch notice was seen, which
   never leaves the phone.
@@ -150,7 +157,9 @@ ecs.gov.bd and cabinet.gov.bd.
 
 There is no login and no account, and the app itself collects no user data.
 Its maps are Google Maps (Maps SDK for Android), which receives the usual
-technical data from the phone to show them; the app asks for no location.
+technical data from the phone to show them. The app asks for the location
+only when the reader taps "আমি কি এই আসনে?" on a map, to say which seat the
+phone is in; the position is checked on the phone and not sent or stored.
 
 News and videos: the app shows only headlines, the outlet's or channel's name
 and a link. Tapping one opens the outlet's own page or the channel's video in

@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../data/member.dart';
 import '../i18n.dart';
+import '../locate.dart';
 import '../theme.dart';
 import 'google.dart';
 
@@ -19,7 +20,10 @@ import 'google.dart';
 /// The map opens on what the seat holds; a pinch zooms it (out to the whole
 /// district), a tap on a place says what it is and which seat it lies in, and
 /// "বড় করে দেখুন" opens it full screen, where nothing else claims the gestures.
-/// There is no "Am I in this seat?" button: the app asks for no location.
+/// "আমি কি এই আসনে?" on the map asks the phone where it is (only then, and
+/// only with the reader's permission; lib/locate.dart), marks the spot and
+/// says which place it is in and whether that place is in this seat. The
+/// point is checked on the phone and sent nowhere.
 ///
 /// With a Google Maps key in the build (lib/maps/google.dart) the same places
 /// are laid over Google's road map, the street map the website shows; the
@@ -90,8 +94,8 @@ class _SeatMapState extends State<SeatMap> {
   Future<_MapData> _load() async {
     final places = await fetchDistrictGeo(widget.districtSlug);
     final namer = t.en
-        ? _Namer.en(await upazilaNamesEn(), widget.districtName)
-        : const _Namer.bn();
+        ? PlaceNamer.en(await upazilaNamesEn(), widget.districtName)
+        : const PlaceNamer.bn();
     return _MapData(places, namer, t.lang);
   }
 
@@ -123,7 +127,7 @@ class _SeatMapState extends State<SeatMap> {
         final part = mine
             .where((p) => p.seats[widget.seatSlug] == SeatPart.part)
             .toList();
-        final namer = d?.namer ?? const _Namer.bn();
+        final namer = d?.namer ?? const PlaceNamer.bn();
         final summary = [
           ...namer.placeList(whole),
           ...namer.placeList(part).map((p) => t('$p-এর একাংশ', 'part of $p')),
@@ -290,7 +294,7 @@ class _SeatMapState extends State<SeatMap> {
 
 class _MapData {
   final List<GeoPlace> places;
-  final _Namer namer;
+  final PlaceNamer namer;
   final Lang lang;
   const _MapData(this.places, this.namer, this.lang);
 }
@@ -398,7 +402,7 @@ class _MapView extends StatefulWidget {
   final List<GeoPlace> places;
   final String seatSlug;
   final Color color;
-  final _Namer namer;
+  final PlaceNamer namer;
   final String Function(String slug) seatName;
   final String title;
   final String summary;
@@ -432,6 +436,12 @@ class _MapViewState extends State<_MapView> {
   _Projected? _shape;
   Size? _fitted;
   GeoPlace? _picked;
+
+  /// Where the phone was found, and what was said about it.
+  Located? _here;
+  String? _where;
+  bool _locating = false;
+  bool _needsSettings = false;
 
   @override
   void dispose() {
@@ -574,6 +584,15 @@ class _MapViewState extends State<_MapView> {
       trafficEnabled: false,
       polygons: polygons,
       polylines: dashes,
+      markers: {
+        if (_here case final h?)
+          Marker(
+            markerId: const MarkerId('here'),
+            position: LatLng(h.lat, h.lon),
+            zIndexInt: 20,
+            infoWindow: InfoWindow(title: t('আপনি এখানে', 'You are here')),
+          ),
+      },
       onTap: (_) {
         if (_picked != null) setState(() => _picked = null);
       },
@@ -604,6 +623,94 @@ class _MapViewState extends State<_MapView> {
       }
     }
     setState(() => _picked = identical(hit, _picked) ? null : hit);
+  }
+
+  /// "আমি কি এই আসনে?": the phone's place, and whether it is in this seat.
+  Future<void> _locate() async {
+    setState(() {
+      _locating = true;
+      _needsSettings = false;
+      _where = t('অবস্থান খোঁজা হচ্ছে…', 'Finding your location…');
+    });
+    final r = await locateMe();
+    if (!mounted) return;
+    final at = r.at;
+    if (at == null) {
+      setState(() {
+        _locating = false;
+        _here = null;
+        _where = r.message;
+        _needsSettings = r.needsSettings;
+      });
+      return;
+    }
+    final inside = placeAt(widget.places, at.lon, at.lat);
+    setState(() {
+      _locating = false;
+      _here = inside == null ? null : at;
+      _picked = inside;
+      _where = _verdict(inside);
+    });
+    if (inside == null) return;
+    // The spot in view, at the zoom the reader left the map at.
+    if (GoogleMaps.enabled) {
+      _gmap
+          ?.animateCamera(CameraUpdate.newLatLng(LatLng(at.lat, at.lon)))
+          .catchError((_) {});
+    } else {
+      final p = _shape;
+      if (p != null) _centreOn(p.toBox(at.lon, at.lat), p.size);
+    }
+  }
+
+  String _verdict(GeoPlace? inside) {
+    if (inside == null) {
+      return t(
+        'আপনি এই জেলার বাইরে আছেন। জেলার পাতা বা নির্বাচনের মানচিত্রে নিজের আসন খুঁজে নিন।',
+        'You are outside this district. Find your seat on the district page or the election map.',
+      );
+    }
+    final name = widget.namer.placeName(inside);
+    final s = inside.seats[widget.seatSlug];
+    final others = inside.seats.keys
+        .where((k) => k != widget.seatSlug)
+        .map(widget.seatName)
+        .join(', ');
+    if (name == null) {
+      // An English page with no English name for the place.
+      return switch (s) {
+        SeatPart.whole => 'Yes: where you are is wholly in this seat.',
+        SeatPart.part =>
+          'Where you are is partly in this seat${others.isEmpty ? '' : ' and partly in $others'}; check your union or ward against the seat’s description.',
+        null => 'No: where you are is in $others.',
+      };
+    }
+    return switch (s) {
+      SeatPart.whole => t(
+        'হ্যাঁ। আপনার অবস্থান $name, যার পুরোটা এই আসনে।',
+        'Yes. You are in $name, which is wholly in this seat.',
+      ),
+      SeatPart.part => t(
+        'আপনার অবস্থান $name। এর একাংশ এই আসনে${others.isEmpty ? '' : ', বাকিটা $others আসনে'}; আপনার ইউনিয়ন বা ওয়ার্ড কোন আসনে, তা আসনের বর্ণনায় মিলিয়ে দেখুন।',
+        'You are in $name. Part of it is in this seat${others.isEmpty ? '' : ', the rest in $others'}; check your union or ward against the seat’s description.',
+      ),
+      null => t(
+        'না। আপনার অবস্থান $name, যা $others আসনে।',
+        'No. You are in $name, which is in $others.',
+      ),
+    };
+  }
+
+  /// Moves the drawn map so [pt] is in the middle, keeping its zoom.
+  void _centreOn(Offset pt, Size size) {
+    final s = _zoom.value.getMaxScaleOnAxis();
+    final w = size.width;
+    final h = size.height;
+    final tx = (w / 2 - s * pt.dx).clamp(w - s * w, 0.0);
+    final ty = (h / 2 - s * pt.dy).clamp(h - s * h, 0.0);
+    _zoom.value = Matrix4.identity()
+      ..scaleByDouble(s, s, 1, 1)
+      ..setTranslationRaw(tx, ty, 0);
   }
 
   String _label(GeoPlace f) {
@@ -652,6 +759,13 @@ class _MapViewState extends State<_MapView> {
                       bottom: 28,
                       child: _RecentreButton(onPressed: _gRecentre),
                     ),
+                    // Where Google Maps keeps its own "my location", as on
+                    // the website.
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: _LocateButton(busy: _locating, onPressed: _locate),
+                    ),
                   ],
                 );
               }
@@ -690,6 +804,9 @@ class _MapViewState extends State<_MapView> {
                               seatSlug: widget.seatSlug,
                               color: widget.color,
                               picked: picked,
+                              here: _here == null
+                                  ? null
+                                  : p.toBox(_here!.lon, _here!.lat),
                               zoom: _zoom,
                             ),
                           ),
@@ -706,15 +823,105 @@ class _MapViewState extends State<_MapView> {
                         },
                       ),
                     ),
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: _LocateButton(busy: _locating, onPressed: _locate),
+                    ),
                   ],
                 ),
               );
             },
           ),
         ),
+        if (_where case final w?)
+          _NoteBox(
+            child: Semantics(
+              liveRegion: true,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      w,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(height: 1.5),
+                    ),
+                  ),
+                  if (_needsSettings)
+                    TextButton(
+                      onPressed: openLocationSettings,
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.brand,
+                      ),
+                      child: Text(t('সেটিংস', 'Settings')),
+                    ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
+}
+
+/// "আমি কি এই আসনে?": the phone's place against the seat (lib/locate.dart).
+class _LocateButton extends StatelessWidget {
+  final bool busy;
+  final VoidCallback onPressed;
+  const _LocateButton({required this.busy, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: AppColors.surface,
+    shape: const StadiumBorder(),
+    elevation: 2,
+    child: InkWell(
+      customBorder: const StadiumBorder(),
+      onTap: busy ? null : onPressed,
+      child: Padding(
+        padding: const EdgeInsetsDirectional.fromSTEB(6, 6, 14, 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: const BoxDecoration(
+                color: AppColors.brandSoft,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: busy
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.brand,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.my_location_rounded,
+                      size: 17,
+                      color: AppColors.brand,
+                    ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              t('আমি কি এই আসনে?', 'Am I in this seat?'),
+              style: const TextStyle(
+                fontFamily: 'NotoSansBengali',
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// Back to the view the map opened on.
@@ -744,7 +951,10 @@ class _RecentreButton extends StatelessWidget {
 /// points and the names written on them.
 class _Projected {
   final Size size;
-  final _Namer namer;
+  final PlaceNamer namer;
+
+  /// A point (lon, lat) in the box's coordinates.
+  late final Offset Function(double lon, double lat) toBox;
   final List<Path> paths = [];
   final List<Rect> bounds = [];
   final List<Offset> labelAt = [];
@@ -777,6 +987,7 @@ class _Projected {
     final oy = (size.height - spanY * s) / 2;
     Offset at(double lng, double lat) =>
         Offset(ox + (lng - minX) * k * s, oy + (maxY - lat) * s);
+    toBox = at;
 
     for (final f in places) {
       final path = Path()..fillType = PathFillType.evenOdd;
@@ -842,6 +1053,9 @@ class _SeatPainter extends CustomPainter {
   final String seatSlug;
   final Color color;
   final GeoPlace? picked;
+
+  /// Where the phone was found, in the box's coordinates.
+  final Offset? here;
   final TransformationController zoom;
 
   _SeatPainter({
@@ -850,6 +1064,7 @@ class _SeatPainter extends CustomPainter {
     required this.seatSlug,
     required this.color,
     required this.picked,
+    this.here,
     required this.zoom,
   }) : super(repaint: zoom);
 
@@ -1000,6 +1215,23 @@ class _SeatPainter extends CustomPainter {
       ink.paint(canvas, at);
       canvas.restore();
     }
+
+    // The phone's spot: a blue dot in a white ring, the same size at every
+    // zoom, as on a phone's map.
+    final h = here;
+    if (h != null) {
+      canvas.drawCircle(
+        h,
+        13 / scale,
+        Paint()..color = const Color(0xFF1A73E8).withValues(alpha: 0.18),
+      );
+      canvas.drawCircle(h, 7.5 / scale, Paint()..color = Colors.white);
+      canvas.drawCircle(
+        h,
+        5.5 / scale,
+        Paint()..color = const Color(0xFF1A73E8),
+      );
+    }
   }
 
   @override
@@ -1007,19 +1239,21 @@ class _SeatPainter extends CustomPainter {
       old.shape != shape ||
       old.color != color ||
       old.picked != picked ||
+      old.here != here ||
       old.seatSlug != seatSlug;
 }
 
 /// How the map names its places: in Bangla, as the website does, or in
 /// English (upazilas by the bootstrap's `upazilaEn` table, a city corporation
 /// by its district's English name, a ward by its number). A place with no
-/// English on record is left unnamed in English.
-class _Namer {
+/// English on record is left unnamed in English. Also names the place the
+/// election map's "আমার আসন কোনটি?" finds.
+class PlaceNamer {
   final Map<String, String>? _table;
   final String? _districtEn;
 
-  const _Namer.bn() : _table = null, _districtEn = null;
-  const _Namer.en(Map<String, String> table, String? districtEn)
+  const PlaceNamer.bn() : _table = null, _districtEn = null;
+  const PlaceNamer.en(Map<String, String> table, String? districtEn)
     : _table = table,
       _districtEn = districtEn;
 

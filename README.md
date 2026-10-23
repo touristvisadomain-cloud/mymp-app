@@ -82,11 +82,16 @@ Two rules worth keeping:
   honorific in either script: মোঃ আবুল হাসনাত is filed under আ, Md. Abul
   Hasnat under A. The font is bundled, not fetched; it carries Latin too.
 * **Nothing is collected by the app.** No analytics, no crash reporter, no
-  account, no permission beyond `INTERNET`. The one exception the owner chose
-  (2026-10-17) is Google Maps: the election, district and seat maps are
-  Google's when the build has a key, and Google's map service then receives
-  the usual technical data from the phone. No location permission, no
-  "my location", no analytics, and no other dependency that collects data.
+  account. The one exception the owner chose (2026-10-17) is Google Maps: the
+  election, district and seat maps are Google's when the build has a key, and
+  Google's map service then receives the usual technical data from the phone.
+  No analytics, and no other dependency that collects data.
+* **"আমি কি এই আসনে?" (owner, 2026-10-23).** The seat map's button and the
+  election map's "আমার আসন কোনটি?" ask the phone where it is, with the
+  location permission (foreground only, approximate allowed), only when
+  tapped. The point is checked against the seats' boundaries on the phone
+  (lib/locate.dart, `placeAt` in lib/data/member.dart) and sent nowhere, not
+  to mymp.bd and not to Google; Google's own "my location" layer stays off.
   The app's privacy texts (lib/disclaimer.dart, the More tab) say so; the
   Play data-safety answer has to follow (docs/play-listing.md).
 * **The Maps key.** Android reads `MAPS_API_KEY` from `android/local.properties`

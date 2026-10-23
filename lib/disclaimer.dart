@@ -208,12 +208,13 @@ const kGooglePrivacyUrl = 'https://policies.google.com/privacy';
 String get kMapsLine => t(
   'অ্যাপের মানচিত্রগুলো Google Maps-এর। আসন ও জেলার সীমানা আমার এমপির নিজের (OpenStreetMap, OCHA ও geoBoundaries-এর মানচিত্র থেকে), '
       'Google-এর মানচিত্রের ওপর আঁকা। মানচিত্র দেখানোর জন্য Google আপনার ফোন থেকে সাধারণ কারিগরি তথ্য পায় (যেমন IP ঠিকানা, '
-      'ফোন ও অ্যাপের ধরন), যা Google-এর গোপনীয়তা নীতির অধীন। অ্যাপ নিজে কোনো অ্যাকাউন্ট খোলায় না, কিছু সংগ্রহ করে না, '
-      'আপনার অবস্থানও জানতে চায় না।',
+      'ফোন ও অ্যাপের ধরন), যা Google-এর গোপনীয়তা নীতির অধীন। অ্যাপ নিজে কোনো অ্যাকাউন্ট খোলায় না, কিছু সংগ্রহ করে না। '
+      '“আমি কি এই আসনে?” চাপলে তবেই অ্যাপ আপনার অবস্থান জানতে চায়; তা ফোনেই আসনের সীমানার সঙ্গে মেলানো হয়, কোথাও পাঠানো বা রাখা হয় না।',
   'The app’s maps are Google Maps. The seat and district boundaries are My MP’s own (from the maps of OpenStreetMap, OCHA '
       'and geoBoundaries), drawn over Google’s map. To show the maps, Google receives the usual technical data from your phone '
-      '(such as its IP address and the kind of phone and app), under Google’s privacy policy. The app itself has no account, '
-      'collects nothing and does not ask where you are.',
+      '(such as its IP address and the kind of phone and app), under Google’s privacy policy. The app itself has no account '
+      'and collects nothing. It asks where you are only when you tap “Am I in this seat?”, and then checks it against the '
+      'seats’ boundaries on the phone; it is not sent anywhere or kept.',
 );
 
 /// Every source, grouped, each one a link. Used by the card on the "আরও" tab,

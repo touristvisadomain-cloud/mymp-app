@@ -152,7 +152,8 @@ class BioCard extends StatelessWidget {
 }
 
 /// A one-line paragraph starting "### " is a sub-heading ("### রাজনৈতিক জীবন"), as on the website.
-bool _isHeading(String p) => RegExp(r'^###\s+\S').hasMatch(p) && !p.contains('\n');
+bool _isHeading(String p) =>
+    RegExp(r'^###\s+\S').hasMatch(p) && !p.contains('\n');
 
 /// A sub-heading inside a biography: a short bar in the brand colour, then the title.
 class _SubHeading extends StatelessWidget {

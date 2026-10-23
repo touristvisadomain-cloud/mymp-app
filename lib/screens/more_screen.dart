@@ -269,9 +269,12 @@ class _MoreScreenState extends State<MoreScreen> {
                       Text(
                         t(
                           'কোনো অ্যাকাউন্ট লাগে না, অ্যাপ নিজে কিছু জমা নেয় না। শুধু সংসদ সদস্যদের তালিকাটি ফোনেই রেখে দেওয়া হয়, '
-                              'যাতে নেটওয়ার্ক না থাকলেও অ্যাপ খোলে। সব তথ্য mymp.bd থেকে আসে।',
+                              'যাতে নেটওয়ার্ক না থাকলেও অ্যাপ খোলে। সব তথ্য mymp.bd থেকে আসে। মানচিত্রে “আমি কি এই আসনে?” চাপলে তবেই '
+                              'অ্যাপ আপনার অবস্থান জানতে চায়; তা ফোনেই আসনের সীমানার সঙ্গে মেলানো হয়, কোথাও পাঠানো বা রাখা হয় না।',
                           'No account is needed, and the app itself collects nothing. Only the list of Members of Parliament '
-                              'is kept on the phone, so that the app opens even with no network. All information comes from mymp.bd.',
+                              'is kept on the phone, so that the app opens even with no network. All information comes from mymp.bd. '
+                              'The app asks where you are only when you tap “Am I in this seat?” on a map; it checks it against the '
+                              'seats’ boundaries on the phone and does not send or keep it.',
                         ),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
@@ -283,10 +286,10 @@ class _MoreScreenState extends State<MoreScreen> {
                         Text(
                           t(
                             'মানচিত্রগুলো Google Maps-এর। মানচিত্র দেখানোর জন্য Google আপনার ফোন থেকে সাধারণ কারিগরি তথ্য পায় '
-                                '(যেমন IP ঠিকানা, ফোন ও অ্যাপের ধরন), যা Google-এর গোপনীয়তা নীতির অধীন। অ্যাপ আপনার অবস্থান জানতে চায় না।',
+                                '(যেমন IP ঠিকানা, ফোন ও অ্যাপের ধরন), যা Google-এর গোপনীয়তা নীতির অধীন। আপনার অবস্থান Google-কে দেওয়া হয় না।',
                             'The maps are Google Maps. To show them, Google receives the usual technical data from your phone '
                                 '(such as its IP address and the kind of phone and app), under Google’s privacy policy. '
-                                'The app does not ask where you are.',
+                                'Your location is not given to Google.',
                           ),
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),

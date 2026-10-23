@@ -28,6 +28,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>মানচিত্রে “আমি কি এই আসনে?” চাপলে আপনার অবস্থান ফোনেই আসনের সীমানার সঙ্গে মিলিয়ে দেখা হয়; কোথাও পাঠানো বা রাখা হয় না।</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
